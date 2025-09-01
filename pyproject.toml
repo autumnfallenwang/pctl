@@ -9,9 +9,12 @@ description = "PAIC Control - Unified testing CLI for token, journey, and ELK ma
 requires-python = ">=3.13"
 dependencies = [
     "click>=8.2.1",
+    "cryptography>=45.0.6",
     "httpx>=0.28.1",
+    "jwcrypto>=1.5.6",
     "loguru>=0.7.3",
     "pydantic>=2.11.7",
+    "pyjwt>=2.10.1",
     "pyyaml>=6.0.2",
     "rich>=14.1.0",
 ]

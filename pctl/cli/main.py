@@ -7,6 +7,8 @@ Main entry point for the unified testing CLI
 import click
 from rich.console import Console
 
+from .token import token
+
 console = Console()
 
 @click.group()
@@ -21,6 +23,9 @@ def cli(ctx, config):
 def version():
     """Show version information"""
     console.print("pctl version 0.1.0")
+
+# Add subcommand groups
+cli.add_command(token)
 
 if __name__ == '__main__':
     cli()

@@ -74,9 +74,46 @@ pctl/
 # Test CLI is working
 uv run pctl --help
 uv run pctl version
+uv run pctl token --help
 
 # Run with development dependencies 
 uv sync
+```
+
+### Token Commands
+
+**Available Commands:**
+- `pctl token get` - Generate PAIC Service Account access token from YAML config
+- `pctl token decode` - Decode and inspect JWT token (without verification)  
+- `pctl token validate` - Validate JWT token format and basic structure
+
+**Options for `pctl token get`:**
+- `-c, --config PATH` - Path to YAML token configuration file (required)
+- `-v, --verbose` - Enable verbose logging
+- `-f, --format [token|bearer|json]` - Output format (default: token)
+
+**Examples:**
+```bash
+# Basic token generation (token format)
+uv run pctl token get -c pctl/configs/token/real/service-account.yaml
+
+# Generate with verbose logging
+uv run pctl token get -c pctl/configs/token/real/service-account.yaml -v
+
+# Generate in bearer format
+uv run pctl token get -c pctl/configs/token/real/service-account.yaml -f bearer
+
+# Generate in JSON format with verbose logging
+uv run pctl token get -c pctl/configs/token/real/service-account.yaml -f json -v
+
+# Decode JWT token (inspect payload)
+uv run pctl token decode "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXN0IjoicGF5bG9hZCJ9..."
+
+# Validate JWT token structure and expiration
+uv run pctl token validate "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXN0IjoicGF5bG9hZCJ9..."
+
+# Use example config (will fail - demo purposes)
+uv run pctl token get -c pctl/configs/token/examples/service-account.yaml -v
 ```
 
 ### Development Workflow
@@ -104,6 +141,12 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Project Setup ✅
-- **Next**: Migrate token subcommand from authflow TypeScript
-- **Ready**: Basic CLI structure with 3-layer architecture complete
+- **Phase**: Token Implementation ✅
+- **Complete**: 
+  - Project setup with UV and 3-layer architecture
+  - Token subcommand fully migrated from TypeScript
+  - JWT creation and ForgeRock token exchange working
+  - All output formats (token, bearer, json) functional
+  - Decode and validate commands implemented
+- **Next**: Journey subcommand migration
+- **Ready**: Full token functionality with Rich CLI interface

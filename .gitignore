@@ -208,3 +208,6 @@ __marimo__/
 
 # Project specific - ignore legacy reference tools during development
 examples/
+
+# Ignore real config files for security
+pctl/configs/*/real/
