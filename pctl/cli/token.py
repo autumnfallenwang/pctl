@@ -5,15 +5,10 @@ Token CLI commands - External interface layer
 import asyncio
 from pathlib import Path
 import click
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ..services.token_service import TokenService
 from ..core.exceptions import TokenError, ConfigError
 from ..core.logger import setup_logger
-
-console = Console()
 
 @click.group()
 def token():
@@ -48,19 +43,11 @@ async def _get_token_async(config_path: Path, verbose: bool, output_format: str)
     try:
         token_service = TokenService()
         
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-            transient=True
-        ) as progress:
-            
-            # Show progress for token generation  
-            task = progress.add_task("Generating access token...", total=100)
-            
-            # Get token from service
-            result = await token_service.get_token(config_path)
-            progress.update(task, completed=100)
+        if verbose:
+            click.echo("Generating access token...")
+        
+        # Get token from service
+        result = await token_service.get_token(config_path)
         
         # Format and output token
         formatted_output = token_service.format_token(result, output_format)
@@ -69,18 +56,18 @@ async def _get_token_async(config_path: Path, verbose: bool, output_format: str)
         print(formatted_output)
             
         if verbose:
-            console.print(f"✅ Token generated successfully", style="green")
+            click.echo("✅ Token generated successfully")
             
     except ConfigError as e:
-        console.print(f"❌ Configuration error: {e}", style="red") 
+        click.echo(f"❌ Configuration error: {e}", err=True)
         raise click.ClickException(str(e))
         
     except TokenError as e:
-        console.print(f"❌ Token error: {e}", style="red")
+        click.echo(f"❌ Token error: {e}", err=True)
         raise click.ClickException(str(e))
         
     except Exception as e:
-        console.print(f"❌ Unexpected error: {e}", style="red")
+        click.echo(f"❌ Unexpected error: {e}", err=True)
         raise click.ClickException(f"Failed to generate token: {e}")
 
 @token.command()
@@ -104,18 +91,17 @@ def decode(token_string: str):
         # Pretty print decoded token
         formatted_json = json.dumps(decoded, indent=2)
         
-        console.print(Panel(
-            formatted_json,
-            title="🔍 Decoded JWT Token",
-            border_style="blue"
-        ))
+        click.echo("🔍 Decoded JWT Token")
+        click.echo("=" * 50)
+        click.echo(formatted_json)
+        click.echo("=" * 50)
         
     except jwt.DecodeError as e:
-        console.print(f"❌ Invalid JWT format: {e}", style="red")
+        click.echo(f"❌ Invalid JWT format: {e}", err=True)
         raise click.ClickException("Invalid JWT token")
         
     except Exception as e:
-        console.print(f"❌ Failed to decode token: {e}", style="red")
+        click.echo(f"❌ Failed to decode token: {e}", err=True)
         raise click.ClickException(str(e))
 
 @token.command()  
@@ -135,7 +121,7 @@ def validate(token_string: str):
         missing_fields = [field for field in required_fields if field not in decoded]
         
         if missing_fields:
-            console.print(f"⚠️  Missing required JWT fields: {missing_fields}", style="yellow")
+            click.echo(f"⚠️  Missing required JWT fields: {missing_fields}")
         
         # Check expiration
         if 'exp' in decoded:
@@ -143,20 +129,20 @@ def validate(token_string: str):
             current_time = datetime.now()
             
             if exp_time < current_time:
-                console.print("❌ Token has expired", style="red")
-                console.print(f"   Expired: {exp_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                click.echo("❌ Token has expired")
+                click.echo(f"   Expired: {exp_time.strftime('%Y-%m-%d %H:%M:%S')}")
             else:
                 time_left = exp_time - current_time
-                console.print("✅ Token is valid and not expired", style="green")
-                console.print(f"   Expires: {exp_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                console.print(f"   Time left: {time_left}")
+                click.echo("✅ Token is valid and not expired")
+                click.echo(f"   Expires: {exp_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                click.echo(f"   Time left: {time_left}")
         
-        console.print("✅ JWT format is valid", style="green")
+        click.echo("✅ JWT format is valid")
         
     except jwt.DecodeError as e:
-        console.print(f"❌ Invalid JWT format: {e}", style="red")
+        click.echo(f"❌ Invalid JWT format: {e}", err=True)
         raise click.ClickException("Invalid JWT token")
         
     except Exception as e:
-        console.print(f"❌ Validation error: {e}", style="red") 
+        click.echo(f"❌ Validation error: {e}", err=True)
         raise click.ClickException(str(e))

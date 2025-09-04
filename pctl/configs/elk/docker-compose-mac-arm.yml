@@ -1,0 +1,92 @@
+# MacBook Air M4 Optimized ELK Stack Configuration
+# Usage: docker-compose -f docker-compose-mac.yml up -d
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: paic-elastic-mac
+    environment:
+      - discovery.type=single-node
+      # MacBook Air M4 optimized: Conservative memory allocation (1.5GB max)
+      - "ES_JAVA_OPTS=-Xms512m -Xmx1536m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      # Index lifecycle management is enabled by default in ES 8.x
+      # Set default index template with lifecycle policy
+      - cluster.routing.allocation.disk.threshold_enabled=true
+      - cluster.routing.allocation.disk.watermark.low=85%
+      - cluster.routing.allocation.disk.watermark.high=90%
+      - cluster.routing.allocation.disk.watermark.flood_stage=95%
+      # MacBook Air optimizations (cluster-level only)
+      - indices.memory.index_buffer_size=10%
+      - indices.memory.min_index_buffer_size=48mb
+      - thread_pool.write.queue_size=200
+      - bootstrap.memory_lock=false
+      - indices.queries.cache.size=5%
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elastic_data_mac:/usr/share/elasticsearch/data
+    networks:
+      - elk-network-mac
+    # Resource limits for MacBook Air
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 768M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: paic-kibana-mac
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=""
+      # MacBook Air optimizations
+      - NODE_OPTIONS="--max_old_space_size=512"
+      - SERVER_MAXPAYLOAD=2097152
+      - LOGGING_QUIET=true
+      # Reduce memory usage
+      - KIBANA_MEMORY=512m
+      - SERVER_HOST=0.0.0.0
+    ports:
+      - "5601:5601"
+    networks:
+      - elk-network-mac
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    # Resource limits for MacBook Air  
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  elastic_data_mac:
+    driver: local
+
+networks:
+  elk-network-mac:
+    driver: bridge

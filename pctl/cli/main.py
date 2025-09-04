@@ -5,11 +5,9 @@ Main entry point for the unified testing CLI
 """
 
 import click
-from rich.console import Console
 
 from .token import token
-
-console = Console()
+from .elk import elk
 
 @click.group()
 @click.option('--config', type=click.Path(exists=True), help='Config file path')
@@ -22,10 +20,11 @@ def cli(ctx, config):
 @cli.command()
 def version():
     """Show version information"""
-    console.print("pctl version 0.1.0")
+    click.echo("pctl version 0.1.0")
 
 # Add subcommand groups
 cli.add_command(token)
+cli.add_command(elk)
 
 if __name__ == '__main__':
     cli()

@@ -1,0 +1,118 @@
+# PAIC ELK Initialization Configuration
+# Comprehensive setup for templates, policies, and initial configuration
+
+# Lifecycle Policies
+lifecycle_policies:
+  paic-logs-policy:
+    description: "PAIC logs lifecycle policy for local development"
+    phases:
+      hot:
+        actions:
+          rollover:
+            max_size: "500MB"      # Roll over when index reaches 500MB
+            max_age: "1d"          # Roll over daily
+            max_docs: 100000       # Roll over at 100K documents
+          set_priority:
+            priority: 100
+      warm:
+        min_age: "2d"              # Move to warm after 2 days
+        actions:
+          set_priority:
+            priority: 50
+      delete:
+        min_age: "7d"              # Delete indices older than 7 days
+        actions: {}
+
+# Index Templates
+index_templates:
+  paic-logs-template:
+    index_patterns: ["paic-logs-*"]
+    priority: 500                  # High priority to override any other templates
+    template:
+      settings:
+        number_of_shards: 1
+        number_of_replicas: 0
+        refresh_interval: "30s"
+        index.lifecycle.name: "paic-logs-policy"
+        index.lifecycle.rollover_alias: "paic-logs"
+      mappings:
+        properties:
+          "timestamp":
+            type: "date"
+          "payload":
+            type: "text"
+            analyzer: "standard"
+          "source":
+            type: "keyword"
+          "type":
+            type: "keyword"
+    version: 1
+    _meta:
+      description: "PAIC logs template with 7-day retention"
+      created_by: "paic-elk-init"
+      
+  # Future: Add more templates here for different log types
+  # paic-audit-template:
+  #   index_patterns: ["paic-audit-*"]
+  #   ...
+
+# Index Aliases (for rollover support)
+index_aliases:
+  paic-logs:
+    description: "Primary alias for PAIC logs rollover"
+
+# Kibana Data Views
+kibana_data_views:
+  paic-logs:
+    title: "paic-logs-*"
+    name: "PAIC Logs"
+    timeFieldName: "timestamp"
+    description: "Main data view for browsing PAIC application logs across all environments"
+  # Future: Add more data views for different log types
+  # paic-audit:
+  #   title: "paic-audit-*"
+  #   name: "PAIC Audit Logs"
+  #   timeFieldName: "@timestamp"
+    
+# Initial Bootstrap Settings
+bootstrap:
+  # Wait for cluster health before applying configurations
+  wait_for_health: "yellow"
+  # Retry settings for configuration application
+  max_retries: 3
+  retry_delay: 5
+  # Kibana data view creation strategy
+  data_view_creation: "delayed"  # Options: "immediate", "delayed"
+  data_view_refresh_required: true
+
+# Storage Estimates
+storage_estimates:
+  paic-logs:
+    daily_size: "500MB"
+    retention_days: 7
+    max_storage: "3.5GB"
+    description: "Estimated maximum storage with daily rollover and 7-day retention"
+
+# Validation Rules
+validation:
+  required_policies: ["paic-logs-policy"]
+  required_templates: ["paic-logs-template"]
+  
+# Environment-specific overrides (for future use)
+environments:
+  development:
+    # Shorter retention for dev
+    overrides:
+      lifecycle_policies:
+        paic-logs-policy:
+          phases:
+            delete:
+              min_age: "3d"
+  production:
+    # Longer retention for prod
+    overrides:
+      lifecycle_policies:
+        paic-logs-policy:
+          phases:
+            delete:
+              min_age: "30d"

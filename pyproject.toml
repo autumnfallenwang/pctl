@@ -16,7 +16,6 @@ dependencies = [
     "pydantic>=2.11.7",
     "pyjwt>=2.10.1",
     "pyyaml>=6.0.2",
-    "rich>=14.1.0",
 ]
 
 [project.scripts]
@@ -25,7 +24,7 @@ pctl = "pctl.cli.main:cli"
 [dependency-groups]
 dev = [
     "black>=25.1.0",
-    "pyinstaller>=6.15.0",
     "pytest>=8.4.1",
+    "requests>=2.32.5",
     "ruff>=0.12.11",
 ]

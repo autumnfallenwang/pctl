@@ -1,0 +1,89 @@
+# PAIC ELK Configuration - MacBook Air M4 Optimized
+# Reduced retention and smaller index sizes for limited resources
+
+# Lifecycle Policies
+lifecycle_policies:
+  paic-logs-policy-mac:
+    description: "PAIC logs lifecycle policy optimized for MacBook Air M4"
+    phases:
+      hot:
+        actions:
+          rollover:
+            max_size: "200MB"      # Smaller rollover size for Mac Air
+            max_age: "6h"          # More frequent rollovers
+            max_docs: 50000        # Fewer documents per index
+          set_priority:
+            priority: 100
+      warm:
+        min_age: "12h"             # Quick transition to warm
+        actions:
+          set_priority:
+            priority: 50
+          forcemerge:
+            max_num_segments: 1    # Optimize storage
+      delete:
+        min_age: "3d"              # Shorter retention for Mac Air
+        actions: {}
+
+# Index Templates
+index_templates:
+  paic-logs-template-mac:
+    index_patterns: ["paic-logs-*"]
+    priority: 500
+    template:
+      settings:
+        number_of_shards: 1        # Single shard for Mac Air
+        number_of_replicas: 0      # No replicas for local dev
+        refresh_interval: "30s"    # Reduce refresh frequency
+        index.lifecycle.name: "paic-logs-policy-mac"
+        index.lifecycle.rollover_alias: "paic-logs"
+        # MacBook Air optimizations
+        index.codec: "best_compression"  # Better compression
+        index.merge.policy.max_merge_at_once: 5
+        index.merge.policy.segments_per_tier: 5
+        index.translog.flush_threshold_size: "256mb"
+        index.translog.sync_interval: "30s"
+      mappings:
+        properties:
+          "timestamp":
+            type: "date"
+          "payload":
+            type: "text"
+            analyzer: "standard"
+            # Disable norms to save memory
+            norms: false
+          "source":
+            type: "keyword"
+          "type":
+            type: "keyword"
+
+# Bootstrap Settings
+bootstrap:
+  wait_for_health: "yellow"
+  max_retries: 3
+  retry_delay: 5
+  # Kibana data view creation strategy
+  data_view_creation: "delayed"  # Options: "immediate", "delayed"
+  data_view_refresh_required: true
+
+# Kibana Data Views
+kibana_data_views:
+  paic-logs:
+    title: "paic-logs-*"
+    name: "PAIC Logs (Mac)"
+    timeFieldName: "timestamp"
+    description: "MacBook Air optimized data view for PAIC application logs"
+
+# MacBook Air specific overrides
+mac_optimizations:
+  # Batch sizes for streaming
+  default_batch_size: 25         # Smaller batches
+  flush_interval: 10             # Longer flush interval
+  
+  # Resource monitoring thresholds
+  memory_warning_threshold: 80   # Warn at 80% memory usage
+  disk_warning_threshold: 85     # Warn at 85% disk usage
+  
+  # Performance tuning
+  search_max_buckets: 5000       # Reduce aggregation limits
+  max_result_window: 5000        # Limit large result sets
