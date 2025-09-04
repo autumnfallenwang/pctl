@@ -141,15 +141,19 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Token Implementation ✅
+- **Phase**: ELK Implementation ✅
 - **Complete**: 
   - Project setup with UV and 3-layer architecture
   - Token subcommand fully migrated from TypeScript
   - JWT creation and ForgeRock token exchange working
   - All output formats (token, bearer, json) functional
   - Decode and validate commands implemented
-- **Next**: ELK subcommand implementation 
-- **Ready**: Full token functionality with Rich CLI interface
+  - Complete ELK stack management with 9 commands
+  - Real-time log streaming from Frodo to Elasticsearch
+  - Cross-platform support (Linux x64, Mac ARM)
+  - Clean Python distribution without build complexity
+- **Next**: Journey subcommand implementation (optional)
+- **Ready**: Full token and ELK functionality
 
 ## ELK Subcommand Design
 
@@ -174,70 +178,33 @@ uv run pyinstaller --onefile pctl/cli/main.py
 - `-F, --force` - Skip confirmation prompts (DANGEROUS)
 - `-v, --verbose` - Enable verbose logging
 
-### Internal Service API Chain
+### Usage Examples
 
-**Command Behavior Logic:**
+```bash
+# Initialize ELK stack
+uv run pctl elk init
 
-**`pctl elk start [env]`:**
-- No env: start default environment (commkentsb2)
-- With env: start specific environment
-- Logic chain: check_health() → (init if needed) → check_status(env) → (stop if running) → start_streamer()
-- Auto-initialization: if infrastructure not ready, auto-run init_stack()
-- Auto-restart: if streamer already running, stop + start
+# Start streamer for default environment  
+uv run pctl elk start
 
-**`pctl elk stop [env]`:**
-- No env: stop ALL running streamers
-- With env: stop specific environment streamer
+# Start streamer for specific environment
+uv run pctl elk start testenv
 
-**`pctl elk status [env]`:**
-- No env: show ALL environments status (same as list)
-- With env: show specific environment detailed status
+# Check status of all environments
+uv run pctl elk status
 
-**`pctl elk clean/purge <env>`:**
-- Environment argument REQUIRED
-- Cannot operate on all environments for safety
+# Check ELK infrastructure health
+uv run pctl elk health
 
-**Smart Auto-Initialization:**
+# Stop all streamers
+uv run pctl elk stop
+
+# Clean data for specific environment
+uv run pctl elk clean testenv
+
+# Stop everything safely (preserves data)
+uv run pctl elk hardstop
+
+# Remove everything (deletes all data)
+uv run pctl elk down
 ```
-elk start -> check_health() -> NOT_FOUND -> init_stack() -> wait_for_health() -> start_streamer()
-                            -> STOPPED -> start_containers() -> wait_for_health() -> start_streamer()
-                            -> UNHEALTHY -> ERROR
-                            -> HEALTHY -> start_streamer()
-```
-
-**Cross-Command Dependencies:**
-- `check_health()` used by: start, status, clean, purge, init
-- `get_status()` used by: status (for all envs)
-- `wait_for_health()` used by: init, start (after container operations)
-
-### Architecture Layers
-
-**Service Layer (ELKService):**
-- `init_stack()` - Docker compose + ELK config setup
-- `start_streamer(env)` - Background Python streamer management
-- `check_health()` - ELK infrastructure health check [INTERNAL API]
-- `get_status(env)` - Comprehensive environment status [INTERNAL API]
-- Platform detection and config file selection
-
-**Internal APIs (for cross-command use):**
-- `check_health() -> HealthStatus` - Used by: start, status, clean, purge, init
-- `get_status(env) -> StreamerStatus` - Used by: start (restart check), status
-- `get_all_statuses() -> List[StreamerStatus]` - Used by: status (no env), stop (no env)
-
-**Core Layer:**
-- `SubprocessRunner` - Docker/frodo command execution
-- `PlatformDetector` - Linux/macOS/ARM detection  
-- `StreamerManager` - Background process management
-- Config file management (docker-compose, ELK templates)
-
-**CLI Layer:**
-- Rich progress bars for long operations
-- Confirmation prompts for destructive operations  
-- Table formatting for status output
-
-**Critical Implementation Rule:**
-- **JSON Passthrough Only**: Streamer must pass Frodo JSON logs to Elasticsearch exactly as-is
-- **No metadata addition**: Do not add timestamps, environment tags, or any extra fields
-- **Pure passthrough**: `json.loads(frodo_line)` → `elasticsearch.bulk_index()`
-- **Skip non-JSON**: Ignore Frodo header messages, only index valid JSON documents
-- **Operational logs separate**: High-level streamer messages go to log file, JSON data goes to ES
