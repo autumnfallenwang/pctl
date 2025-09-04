@@ -14,7 +14,7 @@ from ...core.elk.elk_models import ELKHealth, StreamerStatus, ProcessInfo, ELKCo
 from ...core.elk.platform import PlatformDetector
 from ...core.subprocess_runner import SubprocessRunner
 from ...core.exceptions import ELKError, ServiceError
-from ...services.config_service import ConfigService
+from ...core.config import ConfigLoader
 
 
 class ELKService:
@@ -24,7 +24,7 @@ class ELKService:
         self.logger = logger
         self.subprocess_runner = SubprocessRunner()
         self.platform_detector = PlatformDetector()
-        self.config_service = ConfigService()
+        self.config_loader = ConfigLoader()
         
         # Smart config path resolution for deployment
         if require_config:

@@ -14,9 +14,6 @@ class ServiceError(PctlError):
     """Service layer errors"""
     pass
 
-class TokenError(ServiceError):
-    """Token service errors"""
-    pass
 
 class JourneyError(ServiceError):
     """Journey service errors"""

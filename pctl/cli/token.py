@@ -6,8 +6,9 @@ import asyncio
 from pathlib import Path
 import click
 
-from ..services.token_service import TokenService
-from ..core.exceptions import TokenError, ConfigError
+from ..services.token.token_service import TokenService
+from ..core.token.token_models import TokenError
+from ..core.exceptions import ConfigError
 from ..core.logger import setup_logger
 
 @click.group()

@@ -11,10 +11,10 @@ from loguru import logger
 import jwt
 from jwcrypto import jwk
 
-from ..core.config import TokenConfig, TokenResult, TokenResponse
-from ..core.http_client import HTTPClient  
-from ..core.exceptions import TokenError, ConfigError
-from .config_service import ConfigService
+from ...core.token.token_models import TokenConfig, TokenResult, TokenResponse, TokenError
+from ...core.http_client import HTTPClient  
+from ...core.exceptions import ConfigError
+from ...core.config import ConfigLoader
 
 
 class TokenService:
@@ -22,7 +22,7 @@ class TokenService:
     
     def __init__(self):
         self.logger = logger
-        self.config_service = ConfigService()
+        self.config_loader = ConfigLoader()
     
     def _create_signed_jwt(self, 
                           service_account_id: str,
@@ -73,8 +73,8 @@ class TokenService:
         """Get access token using config file (Internal API)"""
         
         try:
-            # Load and validate config using ConfigService
-            config_data = await self.config_service.load_yaml(config_path)
+            # Load and validate config using ConfigLoader
+            config_data = await self.config_loader.load_yaml(config_path)
             config = TokenConfig(**config_data)
             
             # Create audience URL for token endpoint

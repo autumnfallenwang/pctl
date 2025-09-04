@@ -1,50 +1,48 @@
 """
-Pydantic configuration models for pctl
+Core configuration utilities for pctl
+Handles YAML loading, validation, and cross-command config sharing
 """
 
-from typing import Optional, Literal
-from pydantic import BaseModel, Field, field_validator
+from pathlib import Path
+from typing import Dict, Any
+import yaml
+from loguru import logger
+from .exceptions import ConfigError
 
 
-class TokenConfig(BaseModel):
-    """Configuration model for token generation"""
-    service_account_id: str = Field(..., description="Service account identifier")
-    jwk_json: str = Field(..., description="JWK as JSON string (opaque)")
-    platform: str = Field(..., description="ForgeRock platform URL")
-    scope: str = Field(default="fr:am:* fr:idm:*", description="OAuth scope")
-    exp_seconds: int = Field(default=899, description="JWT expiration in seconds")
-    proxy: Optional[str] = Field(default=None, description="Proxy configuration")
-    verbose: bool = Field(default=False, description="Enable verbose logging")
-    output_format: Literal["token", "bearer", "json"] = Field(default="token", description="Output format")
-    verify_ssl: bool = Field(default=True, description="SSL certificate verification")
+class ConfigLoader:
+    """Core utility for configuration loading and parsing"""
     
-    @field_validator('platform')
-    @classmethod
-    def validate_platform_url(cls, v):
-        """Ensure platform starts with https://"""
-        if not v.startswith('https://'):
-            raise ValueError('Platform must start with https://')
-        return v
+    def __init__(self):
+        self.logger = logger
     
-    @field_validator('exp_seconds')
-    @classmethod
-    def validate_exp_seconds(cls, v):
-        """Ensure expiration is reasonable"""
-        if v < 1 or v > 3600:
-            raise ValueError('exp_seconds must be between 1 and 3600 seconds')
-        return v
-
-
-class TokenResult(BaseModel):
-    """Result model for token operations"""
-    token: str = Field(..., description="Access token")
-    expires_in: Optional[int] = Field(default=None, description="Token expiration in seconds")
-    scope: Optional[str] = Field(default=None, description="Granted scope")
-
-
-class TokenResponse(BaseModel):
-    """HTTP response model from token endpoint"""
-    access_token: str
-    token_type: str = Field(default="Bearer")
-    expires_in: Optional[int] = None
-    scope: Optional[str] = None
+    async def load_yaml(self, config_path: str | Path) -> Dict[str, Any]:
+        """Load and parse YAML configuration file"""
+        try:
+            config_path = Path(config_path)
+            if not config_path.exists():
+                raise ConfigError(f"Config file not found: {config_path}")
+            
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            self.logger.info(f"Loaded config from {config_path}")
+            return config
+            
+        except yaml.YAMLError as e:
+            raise ConfigError(f"Invalid YAML in {config_path}: {e}")
+        except Exception as e:
+            raise ConfigError(f"Failed to load config {config_path}: {e}")
+    
+    async def validate_config_keys(self, config: Dict[str, Any], required_keys: list[str]) -> None:
+        """Validate required keys exist in config"""
+        missing = [key for key in required_keys if key not in config]
+        if missing:
+            raise ConfigError(f"Missing required config keys: {missing}")
+    
+    async def get_config_path(self, config_type: str, config_name: str) -> Path:
+        """Get standardized config path"""
+        base_path = Path("pctl/configs") / config_type / config_name
+        if not base_path.suffix:
+            base_path = base_path.with_suffix('.yaml')
+        return base_path

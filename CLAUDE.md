@@ -45,12 +45,13 @@ pctl/
 │   │   ├── journey.py          # Journey commands
 │   │   └── elk.py              # ELK commands
 │   ├── services/               # 🔄 Service Layer (Internal API)
-│   │   ├── token_service.py    # Token business logic
-│   │   ├── journey_service.py  # Journey business logic
-│   │   ├── elk_service.py      # ELK business logic
-│   │   └── config_service.py   # Config management
+│   │   ├── token/              # Token business logic
+│   │   ├── journey/            # Journey business logic
+│   │   └── elk/                # ELK business logic
 │   ├── core/                   # ⚙️ Core Layer (Foundation)
-│   │   ├── config.py           # Pydantic models
+│   │   ├── config.py           # Configuration loading utilities
+│   │   ├── token/              # Token-specific models and utilities
+│   │   ├── elk/                # ELK-specific models and utilities
 │   │   ├── http_client.py      # HTTP utilities
 │   │   ├── subprocess_runner.py # Process execution
 │   │   ├── logger.py           # Logging setup
@@ -63,8 +64,8 @@ pctl/
 ## Cross-Command Communication
 
 - `pctl journey run` → `TokenService.get_token()` internally
-- `pctl elk start` → `ConfigService.load_config()`
-- All commands → `ConfigService` for YAML parsing
+- `pctl elk start` → `ConfigLoader.load_yaml()`
+- All commands → `ConfigLoader` for YAML parsing
 - Services can call each other, CLI cannot
 
 ## Development Commands
