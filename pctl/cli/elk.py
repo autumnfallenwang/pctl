@@ -76,11 +76,9 @@ async def init(ctx, verbose: bool):
               help="Log level (1=ERROR, 2=INFO, 3=DEBUG, 4=ALL)")
 @click.option("-c", "--component", default="idm-core", 
               help="Log component(s) - comma separated")
-@click.option("--log-dir", type=click.Path(exists=True, file_okay=False, dir_okay=True), 
-              help="Directory for log and PID files (default: current directory)")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.pass_context
-async def start(ctx, environment: str, log_level: int, component: str, log_dir: Optional[str], verbose: bool):
+async def start(ctx, environment: str, log_level: int, component: str, verbose: bool):
     """Start log streamer for environment [default: commkentsb2]"""
     
     config_dir = ctx.obj.get('config_dir')
@@ -119,8 +117,7 @@ async def start(ctx, environment: str, log_level: int, component: str, log_dir: 
         
         # Start streamer
         click.echo(f"Starting streamer for {environment}...")
-        log_dir_path = Path(log_dir) if log_dir else None
-        process_info = await service.start_streamer(environment, config, log_dir_path)
+        process_info = await service.start_streamer(environment, config)
         
         # Display status
         click.echo(f"\\n🚀 Streamer started for {environment}")

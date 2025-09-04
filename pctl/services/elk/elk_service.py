@@ -29,14 +29,9 @@ class ELKService:
         # Smart config path resolution for deployment
         if require_config:
             self.base_config_path = self._resolve_config_path(config_dir)
-            # Logs path - use a deployment-friendly location  
-            self.logs_path = self.base_config_path.parent / "logs"
-            self.logs_path.mkdir(exist_ok=True)
         else:
             # For commands that don't need config, use simple defaults
             self.base_config_path = None
-            self.logs_path = Path.cwd() / "logs"  # Fallback for PID files
-            self.logs_path.mkdir(exist_ok=True)
     
     def _resolve_config_path(self, config_dir: Optional[str] = None) -> Path:
         """Resolve config path with deployment-friendly logic"""
@@ -181,19 +176,17 @@ class ELKService:
         
         environments = []
         
-        # Find all PID files to determine environments (check both locations)
-        for search_path in [Path.cwd(), self.logs_path]:
-            for pid_file in search_path.glob("paic_streamer_*.pid"):
-                env_name = pid_file.stem.replace("paic_streamer_", "")
-                if env_name not in environments:
-                    environments.append(env_name)
+        # Find all PID files to determine environments
+        for pid_file in Path.cwd().glob("paic_streamer_*.pid"):
+            env_name = pid_file.stem.replace("paic_streamer_", "")
+            if env_name not in environments:
+                environments.append(env_name)
         
         # Also check for log files without PID files (stopped streamers)
-        for search_path in [Path.cwd(), self.logs_path]:
-            for log_file in search_path.glob("paic_streamer_*.log"):
-                env_name = log_file.stem.replace("paic_streamer_", "")
-                if env_name not in environments:
-                    environments.append(env_name)
+        for log_file in Path.cwd().glob("paic_streamer_*.log"):
+            env_name = log_file.stem.replace("paic_streamer_", "")
+            if env_name not in environments:
+                environments.append(env_name)
         
         # Get status for each environment
         statuses = []
@@ -272,29 +265,17 @@ class ELKService:
     
     # Helper methods
     
-    def _get_streamer_files(self, environment: str, log_dir: Optional[Path] = None) -> tuple[Path, Path]:
-        """Get PID and log file paths for environment"""
-        # Use provided log_dir or default to current working directory
-        base_dir = log_dir if log_dir else Path.cwd()
-        pid_file = base_dir / f"paic_streamer_{environment}.pid"
-        log_file = base_dir / f"paic_streamer_{environment}.log"
+    def _get_streamer_files(self, environment: str) -> tuple[Path, Path]:
+        """Get PID and log file paths for environment in current directory"""
+        pid_file = Path.cwd() / f"paic_streamer_{environment}.pid"
+        log_file = Path.cwd() / f"paic_streamer_{environment}.log"
         return pid_file, log_file
     
     def _find_streamer_files(self, environment: str) -> tuple[Path, Path]:
-        """Find existing PID and log file paths for environment (checks multiple locations)"""
-        # Check current directory first (new default)
-        cwd_pid = Path.cwd() / f"paic_streamer_{environment}.pid"
-        cwd_log = Path.cwd() / f"paic_streamer_{environment}.log"
-        
-        # Check old location for backward compatibility
-        old_pid = self.logs_path / f"paic_streamer_{environment}.pid"
-        old_log = self.logs_path / f"paic_streamer_{environment}.log"
-        
-        # Return the files that exist, preferring current directory
-        if cwd_pid.exists() or cwd_log.exists():
-            return cwd_pid, cwd_log
-        else:
-            return old_pid, old_log
+        """Find existing PID and log file paths for environment in current directory"""
+        pid_file = Path.cwd() / f"paic_streamer_{environment}.pid"
+        log_file = Path.cwd() / f"paic_streamer_{environment}.log"
+        return pid_file, log_file
     
     async def _check_containers_exist(self) -> bool:
         """Check if ELK containers exist"""
@@ -395,7 +376,7 @@ class ELKService:
     
     # PUBLIC APIs (called by CLI) - Additional methods
     
-    async def start_streamer(self, environment: str, config: ELKConfig, log_dir: Optional[Path] = None) -> ProcessInfo:
+    async def start_streamer(self, environment: str, config: ELKConfig) -> ProcessInfo:
         """Start log streamer for environment"""
         
         # Check if already running
@@ -419,7 +400,7 @@ class ELKService:
         ]
         
         # Get file paths
-        pid_file, log_file = self._get_streamer_files(environment, log_dir)
+        pid_file, log_file = self._get_streamer_files(environment)
         
         # Create streamer command (uses current binary or python module)
         import sys

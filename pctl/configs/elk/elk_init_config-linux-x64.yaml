@@ -82,7 +82,7 @@ bootstrap:
   max_retries: 3
   retry_delay: 5
   # Kibana data view creation strategy
-  data_view_creation: "delayed"  # Options: "immediate", "delayed"
+  data_view_creation: "immediate"  # Options: "immediate", "delayed"
   data_view_refresh_required: true
 
 # Storage Estimates

@@ -211,8 +211,16 @@ class StreamerProcess:
         finally:
             # Cleanup (adapted from original)
             self.running = False
+            
+            # Cancel flush task gracefully
             flush_task.cancel()
-            await self.flush_buffer()  # Final flush
+            try:
+                await flush_task
+            except asyncio.CancelledError:
+                pass  # Expected when canceling
+            
+            # Final flush
+            await self.flush_buffer()
             
             if self.frodo_process:
                 self.frodo_process.terminate()
@@ -287,7 +295,9 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Shutdown requested by user")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         sys.exit(1)
 
 
