@@ -82,7 +82,7 @@ class SubprocessRunner:
                                 log_file: Path,
                                 pid_file: Path,
                                 cwd: Optional[Path] = None) -> int:
-        """Start background process and return PID (synchronous)"""
+        """Start background process and return PID (synchronous) - legacy method with PID file"""
         
         import subprocess
         import os
@@ -100,6 +100,31 @@ class SubprocessRunner:
             # Write PID file
             with open(pid_file, 'w') as f:
                 f.write(str(process.pid))
+            
+            self.logger.info(f"Started background process PID {process.pid}")
+            return process.pid
+            
+        except Exception as e:
+            raise ServiceError(f"Failed to start background process: {e}")
+    
+    def start_background_process_simple(self, 
+                                       cmd: List[str], 
+                                       log_file: Path,
+                                       cwd: Optional[Path] = None) -> int:
+        """Start background process and return PID (no PID file needed)"""
+        
+        import subprocess
+        import os
+        
+        try:
+            # Start process in background
+            process = subprocess.Popen(
+                cmd,
+                stdout=open(log_file, 'a'),
+                stderr=subprocess.STDOUT, 
+                cwd=cwd,
+                preexec_fn=os.setsid  # Create new process group
+            )
             
             self.logger.info(f"Started background process PID {process.pid}")
             return process.pid

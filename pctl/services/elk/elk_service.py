@@ -12,6 +12,7 @@ from loguru import logger
 
 from ...core.elk.elk_models import ELKHealth, StreamerStatus, ProcessInfo, ELKConfig, HealthStatus
 from ...core.elk.platform import PlatformDetector
+from ...core.elk.streamer_registry import StreamerRegistry
 from ...core.subprocess_runner import SubprocessRunner
 from ...core.exceptions import ELKError, ServiceError
 from ...core.config import ConfigLoader
@@ -25,6 +26,7 @@ class ELKService:
         self.subprocess_runner = SubprocessRunner()
         self.platform_detector = PlatformDetector()
         self.config_loader = ConfigLoader()
+        self.streamer_registry = StreamerRegistry()
         
         # Smart config path resolution for deployment
         if require_config:
@@ -119,30 +121,39 @@ class ELKService:
     async def get_status(self, environment: str) -> StreamerStatus:
         """Internal API: Get single environment streamer status"""
         
-        pid_file, log_file = self._find_streamer_files(environment)
+        # Get entry from registry
+        entry = self.streamer_registry.get_streamer(environment)
         
         # Check if process is running
         process_running = False
         pid = None
         
-        if pid_file.exists():
-            try:
-                with open(pid_file, 'r') as f:
-                    pid = int(f.read().strip())
-                
-                # Check if process actually exists
-                import os
-                os.kill(pid, 0)  # Raises OSError if process doesn't exist
-                process_running = True
-                
-            except (OSError, ValueError):
-                # Process not running or invalid PID file
+        if entry:
+            if entry.status == "running" and entry.pid:
+                pid = entry.pid
+                try:
+                    # Check if process actually exists
+                    import os
+                    os.kill(pid, 0)  # Raises OSError if process doesn't exist
+                    process_running = True
+                    
+                except OSError:
+                    # Process not running, mark as stopped in registry
+                    process_running = False
+                    self.streamer_registry.stop_streamer(environment)
+                    pid = None
+            elif entry.status == "stopped":
                 process_running = False
                 pid = None
         
         # Get log file info
+        log_file = self._get_log_file_path(environment)
         log_file_size = None
         last_activity = None
+        
+        if entry:
+            # Use registry entry for log file path
+            log_file = Path(entry.log_file)
         
         if log_file.exists():
             stat = log_file.stat()
@@ -160,11 +171,49 @@ class ELKService:
         except Exception as e:
             self.logger.debug(f"Could not get ES stats for {environment}: {e}")
         
+        # Calculate timing information
+        start_time_formatted = None
+        runtime_or_stopped = None
+        components = []
+        log_level = None
+        
+        if entry:
+            components = entry.components
+            log_level = entry.log_level
+            
+            # Format start time to local timezone
+            from datetime import datetime, timezone
+            try:
+                start_dt = datetime.fromisoformat(entry.start_time.replace('Z', '+00:00'))
+                start_local = start_dt.astimezone()
+                start_time_formatted = start_local.strftime("%m/%d %H:%M:%S")
+                
+                # Calculate runtime or format stop time
+                if entry.status == "running" and process_running:
+                    runtime = datetime.now(timezone.utc) - start_dt
+                    hours, remainder = divmod(int(runtime.total_seconds()), 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    runtime_or_stopped = f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
+                elif entry.status == "stopped" and entry.stop_time:
+                    stop_dt = datetime.fromisoformat(entry.stop_time.replace('Z', '+00:00'))
+                    stop_local = stop_dt.astimezone()
+                    runtime_or_stopped = stop_local.strftime("%m/%d %H:%M:%S")
+                else:
+                    runtime_or_stopped = "Unknown"
+            except Exception as e:
+                self.logger.debug(f"Error formatting time for {environment}: {e}")
+                start_time_formatted = "Unknown"
+                runtime_or_stopped = "Unknown"
+
         return StreamerStatus(
             environment=environment,
             process_running=process_running,
             pid=pid,
-            log_file_path=str(log_file) if log_file.exists() else None,
+            components=components,
+            log_level=log_level,
+            start_time=start_time_formatted,
+            runtime_or_stopped=runtime_or_stopped,
+            log_file_path=str(log_file) if entry and log_file.exists() else None,
             log_file_size=log_file_size,
             last_activity=last_activity,
             index_doc_count=index_doc_count,
@@ -172,30 +221,22 @@ class ELKService:
         )
     
     async def get_all_statuses(self) -> List[StreamerStatus]:
-        """Internal API: Get all environment statuses"""
+        """Internal API: Get all environment statuses (JSON registry only)"""
         
-        environments = []
+        # Clean up dead processes first
+        self.streamer_registry.cleanup_dead_processes()
         
-        # Find all PID files to determine environments
-        for pid_file in Path.cwd().glob("paic_streamer_*.pid"):
-            env_name = pid_file.stem.replace("paic_streamer_", "")
-            if env_name not in environments:
-                environments.append(env_name)
+        # Get all registered streamers (single source of truth)
+        entries = self.streamer_registry.list_streamers()
         
-        # Also check for log files without PID files (stopped streamers)
-        for log_file in Path.cwd().glob("paic_streamer_*.log"):
-            env_name = log_file.stem.replace("paic_streamer_", "")
-            if env_name not in environments:
-                environments.append(env_name)
-        
-        # Get status for each environment
+        # Get status for each registered environment
         statuses = []
-        for env in environments:
+        for entry in entries:
             try:
-                status = await self.get_status(env)
+                status = await self.get_status(entry.environment)
                 statuses.append(status)
             except Exception as e:
-                self.logger.error(f"Failed to get status for {env}: {e}")
+                self.logger.error(f"Failed to get status for {entry.environment}: {e}")
         
         return statuses
     
@@ -265,17 +306,9 @@ class ELKService:
     
     # Helper methods
     
-    def _get_streamer_files(self, environment: str) -> tuple[Path, Path]:
-        """Get PID and log file paths for environment in current directory"""
-        pid_file = Path.cwd() / f"paic_streamer_{environment}.pid"
-        log_file = Path.cwd() / f"paic_streamer_{environment}.log"
-        return pid_file, log_file
-    
-    def _find_streamer_files(self, environment: str) -> tuple[Path, Path]:
-        """Find existing PID and log file paths for environment in current directory"""
-        pid_file = Path.cwd() / f"paic_streamer_{environment}.pid"
-        log_file = Path.cwd() / f"paic_streamer_{environment}.log"
-        return pid_file, log_file
+    def _get_log_file_path(self, environment: str) -> Path:
+        """Get log file path for environment from registry"""
+        return self.streamer_registry.get_log_file_path(environment)
     
     async def _check_containers_exist(self) -> bool:
         """Check if ELK containers exist"""
@@ -377,13 +410,32 @@ class ELKService:
     # PUBLIC APIs (called by CLI) - Additional methods
     
     async def start_streamer(self, environment: str, config: ELKConfig) -> ProcessInfo:
-        """Start log streamer for environment"""
+        """Start log streamer for environment (replace any existing)"""
         
-        # Check if already running
-        status = await self.get_status(environment)
-        if status.process_running:
-            self.logger.info(f"Streamer for {environment} already running (PID {status.pid}), stopping first...")
-            await self.stop_streamer(environment)
+        # Check for existing streamer (running or stopped)
+        existing_entry = self.streamer_registry.get_streamer(environment)
+        
+        if existing_entry:
+            if existing_entry.status == "running":
+                self.logger.info(f"⚠️  Replacing running streamer for {environment} (PID {existing_entry.pid})")
+                await self.stop_streamer(environment)
+            elif existing_entry.status == "stopped":
+                # Check if config changed
+                old_components = set(existing_entry.components)
+                new_components = set(config.component.split(','))
+                old_log_level = existing_entry.log_level
+                new_log_level = config.log_level
+                
+                if old_components != new_components or old_log_level != new_log_level:
+                    self.logger.info(f"⚠️  Configuration changed for {environment}")
+                    self.logger.info(f"   Previous: components={sorted(old_components)}, log_level={old_log_level}")
+                    self.logger.info(f"   New: components={sorted(new_components)}, log_level={new_log_level}")
+                else:
+                    self.logger.info(f"🔄 Restarting stopped streamer for {environment}")
+            
+            # Always replace existing entry (running or stopped)
+        else:
+            self.logger.info(f"🚀 Starting new streamer for {environment}")
         
         # Verify Elasticsearch connectivity first (adapted from original)
         await self._verify_elasticsearch_connection(config.elasticsearch_url)
@@ -399,8 +451,8 @@ class ELKService:
             environment
         ]
         
-        # Get file paths
-        pid_file, log_file = self._get_streamer_files(environment)
+        # Get log file path
+        log_file = self._get_log_file_path(environment)
         
         # Create streamer command (uses current binary or python module)
         import sys
@@ -413,7 +465,6 @@ class ELKService:
             "--flush-interval", str(config.flush_interval),
             "--template-name", config.template_name,
             "--log-file", str(log_file),
-            "--pid-file", str(pid_file),
             "--frodo-cmd", " ".join(frodo_cmd),
         ]
         
@@ -423,9 +474,21 @@ class ELKService:
         # Execute streamer module with current Python environment
         streamer_cmd = [sys.executable, "-m", "pctl.core.elk.streamer_process"] + streamer_args
         
-        # Start background process
-        pid = self.subprocess_runner.start_background_process(
-            streamer_cmd, log_file, pid_file
+        # Start background process (no PID file needed, we use registry)
+        pid = self.subprocess_runner.start_background_process_simple(
+            streamer_cmd, log_file
+        )
+        
+        # Register in streamer registry
+        self.streamer_registry.register_streamer(
+            environment=environment,
+            pid=pid,
+            components=config.component.split(','),
+            log_level=config.log_level,
+            frodo_cmd=frodo_cmd,
+            elasticsearch_url=config.elasticsearch_url,
+            batch_size=config.batch_size,
+            flush_interval=config.flush_interval
         )
         
         self.logger.info(f"🚀 Started streamer for {environment} (PID {pid})")
@@ -434,7 +497,7 @@ class ELKService:
         return ProcessInfo(
             pid=pid,
             log_file=str(log_file),
-            pid_file=str(pid_file),
+            pid_file=None,  # No longer using PID files
             environment=environment
         )
     
@@ -449,10 +512,8 @@ class ELKService:
         # Stop process
         success = self.subprocess_runner.stop_process_by_pid(status.pid)
         
-        # Clean up PID file
-        pid_file, _ = self._find_streamer_files(environment)
-        if pid_file.exists():
-            pid_file.unlink()
+        # Mark as stopped in registry (keep entry)
+        self.streamer_registry.stop_streamer(environment)
         
         if success:
             self.logger.info(f"✅ Stopped streamer for {environment}")
@@ -523,6 +584,9 @@ class ELKService:
         # Clean data
         await self.clean_environment_data(environment)
         
+        # Remove from registry completely
+        self.streamer_registry.unregister_streamer(environment)
+        
         self.logger.info(f"💥 Purged environment {environment} completely")
     
     async def stop_containers(self) -> None:
@@ -543,7 +607,9 @@ class ELKService:
     async def remove_containers(self) -> None:
         """Remove ELK containers and volumes (deletes data)"""
         
-        platform_config = self.platform_detector.detect_platform()
+        # Stop all streamers first
+        await self.stop_all_streamers()
+        
         docker_compose_path, _ = self.platform_detector.get_config_files(self.base_config_path)
         
         result = await self.subprocess_runner.run_command([
@@ -551,6 +617,10 @@ class ELKService:
         ], cwd=docker_compose_path.parent)
         
         if result.success:
+            # Clear all streamers from registry (down = complete removal)
+            cleared_count = self.streamer_registry.clear_all_streamers()
+            if cleared_count > 0:
+                self.logger.info(f"🧹 Cleared {cleared_count} streamers from registry")
             self.logger.info("💥 Removed ELK containers and volumes")
         else:
             raise ELKError(f"Failed to remove containers: {result.stderr}")

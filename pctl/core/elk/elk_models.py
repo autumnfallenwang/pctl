@@ -33,6 +33,16 @@ class StreamerStatus(BaseModel):
     environment: str = Field(..., description="Environment name")
     process_running: bool = Field(..., description="Streamer process is running")
     pid: Optional[int] = Field(default=None, description="Process ID if running")
+    
+    # Configuration info
+    components: List[str] = Field(default_factory=list, description="Components being streamed")
+    log_level: Optional[int] = Field(default=None, description="Log level")
+    
+    # Timing info (human-readable)
+    start_time: Optional[str] = Field(default=None, description="Start time (local, formatted)")
+    runtime_or_stopped: Optional[str] = Field(default=None, description="Runtime duration or stop time")
+    
+    # File and index info
     log_file_path: Optional[str] = Field(default=None, description="Path to log file")
     log_file_size: Optional[str] = Field(default=None, description="Log file size")
     last_activity: Optional[datetime] = Field(default=None, description="Last log entry time")
@@ -44,7 +54,7 @@ class ProcessInfo(BaseModel):
     """Background process information"""
     pid: int = Field(..., description="Process ID")
     log_file: str = Field(..., description="Log file path")
-    pid_file: str = Field(..., description="PID file path")
+    pid_file: Optional[str] = Field(default=None, description="PID file path (legacy)")
     environment: str = Field(..., description="Environment name")
 
 

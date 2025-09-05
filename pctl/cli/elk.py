@@ -385,25 +385,33 @@ def _display_single_status(status) -> None:
 def _display_multiple_statuses(statuses) -> None:
     """Display multiple environment statuses in a table"""
     
-    click.echo("\\nEnvironment Status:")
-    click.echo("=" * 80)
+    click.echo("\\nStreamer Status:")
+    click.echo("=" * 140)
     
-    # Table header
-    header = f"{'Environment':<15} {'Status':<12} {'PID':<8} {'Documents':<12} {'Index Size':<12} {'Log Size':<12}"
+    # Enhanced table header with service-provided data
+    header = f"{'Environment':<15} {'Status':<12} {'PID':<8} {'Components':<20} {'Level':<5} {'Started':<19} {'Runtime/Stopped':<19} {'Docs':<8} {'Size':<8}"
     click.echo(header)
-    click.echo("-" * 80)
+    click.echo("-" * 140)
     
     for status in statuses:
+        # All data comes from service layer - display just formats it
         status_icon = "✅ Running" if status.process_running else "❌ Stopped"
         pid = str(status.pid) if status.pid else "-"
+        
+        # Service-provided configuration and timing data
+        components = ",".join(status.components)[:18] + ("..." if len(",".join(status.components)) > 18 else "") if status.components else "Unknown"
+        log_level = str(status.log_level) if status.log_level is not None else "-"
+        start_time = status.start_time or "Unknown"
+        runtime_or_stopped = status.runtime_or_stopped or "Unknown"
+        
+        # Service-provided ES data
         doc_count = f"{status.index_doc_count:,}" if status.index_doc_count is not None else "-"
         index_size = status.index_size or "-"
-        log_size = status.log_file_size or "-"
         
-        row = f"{status.environment:<15} {status_icon:<12} {pid:<8} {doc_count:<12} {index_size:<12} {log_size:<12}"
+        row = f"{status.environment:<15} {status_icon:<12} {pid:<8} {components:<20} {log_level:<5} {start_time:<19} {runtime_or_stopped:<19} {doc_count:<8} {index_size:<8}"
         click.echo(row)
     
-    click.echo("=" * 80)
+    click.echo("=" * 140)
     click.echo()
 
 
