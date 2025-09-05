@@ -478,16 +478,39 @@ class ELKService:
     async def clean_environment_data(self, environment: str) -> None:
         """Clean environment data while keeping streamer running"""
         
-        index_pattern = f"paic-logs-{environment}*"
-        
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.delete(f"http://localhost:9200/{index_pattern}")
+                # First, get all indices matching the pattern
+                cat_response = await client.get(f"http://localhost:9200/_cat/indices/paic-logs-{environment}*?format=json")
                 
-                if response.status_code in [200, 404]:  # 404 means already deleted
-                    self.logger.info(f"🧹 Cleaned data for {environment}")
+                if cat_response.status_code == 200:
+                    indices_data = cat_response.json()
+                    indices_to_delete = [idx['index'] for idx in indices_data]
+                    
+                    if not indices_to_delete:
+                        self.logger.info(f"🧹 No data found for {environment} (already clean)")
+                        return
+                    
+                    # Delete each index individually
+                    deleted_count = 0
+                    for index_name in indices_to_delete:
+                        delete_response = await client.delete(f"http://localhost:9200/{index_name}")
+                        
+                        if delete_response.status_code in [200, 404]:  # 404 means already deleted
+                            deleted_count += 1
+                        else:
+                            self.logger.warning(f"Failed to delete index {index_name}: HTTP {delete_response.status_code}")
+                    
+                    if deleted_count > 0:
+                        self.logger.info(f"🧹 Cleaned {deleted_count} indices for {environment}")
+                    else:
+                        raise ELKError(f"Failed to delete any indices for {environment}")
+                        
+                elif cat_response.status_code == 404:
+                    self.logger.info(f"🧹 No data found for {environment} (already clean)")
                 else:
-                    raise ELKError(f"Failed to clean data for {environment}: HTTP {response.status_code}")
+                    raise ELKError(f"Failed to list indices for {environment}: HTTP {cat_response.status_code}")
+                    
         except httpx.RequestError as e:
             raise ELKError(f"Failed to clean data for {environment}: {e}")
     

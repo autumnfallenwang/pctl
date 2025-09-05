@@ -96,10 +96,20 @@ class StreamerProcess:
             return False
     
     def parse_log_entry(self, log_line: str) -> Optional[Dict[str, Any]]:
-        """Pure JSON passthrough - no metadata added (from original)"""
+        """Parse and normalize payload - handle both string and object payloads"""
         try:
             # Parse JSON from Frodo CLI output
-            return json.loads(log_line.strip())
+            doc = json.loads(log_line.strip())
+            
+            # Normalize payload based on type
+            if doc.get("type") == "text/plain" and isinstance(doc.get("payload"), str):
+                # Wrap string payload in object with "message" key
+                doc["payload"] = {"message": doc["payload"]}
+            elif doc.get("type") == "application/json":
+                # Already an object, leave as-is
+                pass
+            
+            return doc
         except json.JSONDecodeError:
             # Skip non-JSON lines (like header messages)
             return None
@@ -131,7 +141,21 @@ class StreamerProcess:
             if response.status_code == 200:
                 result = response.json()
                 if result.get('errors'):
-                    self.log_message(f"Bulk indexing had errors: {result['errors']}")
+                    # Log detailed error information 
+                    self.log_message(f"Bulk indexing had errors: True")
+                    
+                    # Show first few error details for debugging
+                    error_items = []
+                    for item in result.get('items', []):
+                        if 'index' in item and 'error' in item['index']:
+                            error_detail = item['index']['error']
+                            error_items.append(f"Type: {error_detail.get('type', 'unknown')}, Reason: {error_detail.get('reason', 'unknown')}")
+                            if len(error_items) >= 3:  # Limit to first 3 errors
+                                break
+                    
+                    if error_items:
+                        self.log_message(f"Sample errors: {'; '.join(error_items)}")
+                    
                     return False
                 else:
                     indexed_count = len([item for item in result['items'] if 'index' in item])

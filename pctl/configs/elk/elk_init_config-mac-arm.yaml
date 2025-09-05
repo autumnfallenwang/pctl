@@ -48,10 +48,7 @@ index_templates:
           "timestamp":
             type: "date"
           "payload":
-            type: "text"
-            analyzer: "standard"
-            # Disable norms to save memory
-            norms: false
+            type: "object"
           "source":
             type: "keyword"
           "type":

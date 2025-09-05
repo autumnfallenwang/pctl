@@ -40,8 +40,7 @@ index_templates:
           "timestamp":
             type: "date"
           "payload":
-            type: "text"
-            analyzer: "standard"
+            type: "object"
           "source":
             type: "keyword"
           "type":
