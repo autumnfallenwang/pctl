@@ -36,6 +36,9 @@ Unified Python CLI for PAIC testing and development, combining token management,
    # Install pctl globally - run 'pctl' anywhere
    uv tool install .
    
+   # Update global installation with latest code changes
+   uv tool uninstall pctl && uv tool install .
+   
    # Update your shell PATH (only needed if 'pctl' command not found after install)
    uv tool update-shell
    ```
@@ -113,11 +116,8 @@ uv run black .
 uv run ruff check .
 ```
 
-### Installing and Uninstalling
+### Uninstalling
 ```bash
-# Install globally for testing
-uv tool install .
-
 # Uninstall global installation
 uv tool uninstall pctl
 ```

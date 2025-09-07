@@ -1,0 +1,13 @@
+# Journey configuration template
+# Copy this file to ../real/ folder and update with your actual values
+
+platformUrl: https://your-forgerock-platform.id.forgerock.io
+realm: your-realm
+journeyName: Your_Journey_Name
+
+steps:
+  step1:
+    Username: your-username
+    
+  step2:
+    Password: your-password

@@ -7,6 +7,7 @@ Main entry point for the unified testing CLI
 import click
 
 from .token import token
+from .journey import journey
 from .elk import elk
 
 @click.group()
@@ -20,10 +21,11 @@ def cli(ctx, config):
 @cli.command()
 def version():
     """Show version information"""
-    click.echo("pctl version 0.1.0")
+    click.echo("pctl version 0.2.0")
 
 # Add subcommand groups
 cli.add_command(token)
+cli.add_command(journey)
 cli.add_command(elk)
 
 if __name__ == '__main__':

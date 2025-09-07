@@ -113,3 +113,40 @@ class HTTPClient:
             error_msg = f"Unexpected error: {str(e)}"
             self.logger.error(f"Unexpected error for {url}: {error_msg}")
             raise ServiceError(error_msg)
+    
+    async def post(self, url: str, json: Optional[Dict[str, Any]] = None, 
+                  params: Optional[Dict[str, str]] = None,
+                  headers: Optional[Dict[str, str]] = None,
+                  timeout: Optional[float] = None) -> Dict[str, Any]:
+        """POST request with JSON payload"""
+        
+        try:
+            async with self._create_client() as client:
+                self.logger.debug(f"POST {url}")
+                
+                response = await client.post(
+                    url,
+                    json=json,
+                    params=params,
+                    headers=headers,
+                    timeout=timeout or self.timeout
+                )
+                
+                response.raise_for_status()
+                
+                return response.json()
+                
+        except httpx.HTTPStatusError as e:
+            error_msg = f"HTTP {e.response.status_code}: {e.response.text}"
+            self.logger.error(f"HTTP error for {url}: {error_msg}")
+            raise ServiceError(f"HTTP request failed: {error_msg}")
+            
+        except httpx.RequestError as e:
+            error_msg = f"Request error: {str(e)}"
+            self.logger.error(f"Request error for {url}: {error_msg}")
+            raise ServiceError(f"Network error: {error_msg}")
+            
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)}"
+            self.logger.error(f"Unexpected error for {url}: {error_msg}")
+            raise ServiceError(error_msg)

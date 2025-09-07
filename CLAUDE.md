@@ -142,19 +142,21 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: ELK Implementation ✅
+- **Phase**: Journey Implementation 🚧
 - **Complete**: 
   - Project setup with UV and 3-layer architecture
-  - Token subcommand fully migrated from TypeScript
-  - JWT creation and ForgeRock token exchange working
-  - All output formats (token, bearer, json) functional
-  - Decode and validate commands implemented
-  - Complete ELK stack management with 9 commands
-  - Real-time log streaming from Frodo to Elasticsearch
-  - Cross-platform support (Linux x64, Mac ARM)
-  - Clean Python distribution without build complexity
-- **Next**: Journey subcommand implementation (optional)
-- **Ready**: Full token and ELK functionality
+  - Token subcommand fully migrated from TypeScript (✅ COMPLETE)
+    - JWT creation and ForgeRock token exchange working
+    - All output formats (token, bearer, json) functional
+    - Decode and validate commands implemented
+  - ELK stack management fully implemented (✅ COMPLETE)
+    - Complete ELK stack management with 9 commands
+    - Real-time log streaming from Frodo to Elasticsearch
+    - Registry-based streamer management with process tracking
+    - Cross-platform support (Linux x64, Mac ARM)
+    - Clean Python distribution without build complexity
+- **Current**: Journey subcommand implementation 
+- **Legacy Reference**: TypeScript authflow journey implementation available in `examples/authflow/`
 
 ## ELK Subcommand Design
 
@@ -208,4 +210,101 @@ uv run pctl elk hardstop
 
 # Remove everything (deletes all data)
 uv run pctl elk down
+```
+
+## Journey Subcommand Implementation Plan
+
+### Legacy Reference Analysis
+The TypeScript authflow implementation in `examples/authflow/` provides comprehensive journey functionality:
+
+**Key Features from Legacy Implementation:**
+- Journey initialization and step-by-step execution
+- Interactive and automated modes
+- YAML-based configuration with step definitions
+- Callback processing and response handling
+- Token extraction and success URL capture
+- Comprehensive error handling and logging
+
+### Journey Implementation Todos
+
+**Phase 1: Foundation (Current)**
+- [ ] Create `pctl/cli/journey.py` - Journey CLI commands
+- [ ] Create `pctl/services/journey/` - Journey service layer
+- [ ] Create `pctl/core/journey/` - Journey models and utilities
+- [ ] Add journey config support in `pctl/configs/journey/`
+
+**Phase 2: Core Implementation**
+- [ ] Implement `JourneyConfig` model (from legacy `JourneyConfig` interface)
+- [ ] Implement `JourneyService` with HTTP client integration
+- [ ] Create callback processing logic
+- [ ] Add step-by-step execution engine
+- [ ] Implement response parsing and token extraction
+
+**Phase 3: CLI Integration**  
+- [ ] Add `pctl journey run <config>` command
+- [ ] Add `pctl journey validate <config>` command
+- [ ] Add `pctl journey list` command (list available configs)
+- [ ] Support interactive (`--step`) and automated modes
+- [ ] Add verbose logging and progress indicators
+
+**Phase 4: Advanced Features**
+- [ ] Integration with TokenService for authenticated journeys
+- [ ] Journey templates and config generation
+- [ ] Journey debugging and troubleshooting tools
+- [ ] Performance metrics and timing analysis
+
+### Journey Command Structure
+
+**Core Commands:**
+- `pctl journey run <config>` - Execute authentication journey from YAML config
+- `pctl journey validate <config>` - Validate journey configuration syntax
+- `pctl journey list` - List available journey configurations
+- `pctl journey template <name>` - Generate journey config template
+
+**Options:**
+- `-s, --step` - Run in interactive step-by-step mode
+- `-t, --timeout <ms>` - Request timeout in milliseconds
+- `-v, --verbose` - Enable verbose logging
+- `--dry-run` - Validate config without executing journey
+
+**Usage Examples:**
+```bash
+# Run journey from config
+uv run pctl journey run pctl/configs/journey/real/login-flow.yaml
+
+# Run in interactive step mode
+uv run pctl journey run pctl/configs/journey/real/login-flow.yaml --step
+
+# Validate journey config
+uv run pctl journey validate pctl/configs/journey/examples/basic-login.yaml
+
+# List available journey configs
+uv run pctl journey list
+
+# Generate template config
+uv run pctl journey template basic-auth > my-journey.yaml
+```
+
+### Journey Config Format (YAML)
+```yaml
+# Journey configuration based on legacy authflow format
+platform_url: "https://your-forgerock-platform.com"
+realm: "alpha"  
+journey_name: "Login"
+timeout_ms: 30000
+
+# Step definitions with callback responses
+steps:
+  username:
+    prompt: "User Name"
+    value: "demo"
+  password:
+    prompt: "Password" 
+    value: "changeit"
+  
+# Optional settings
+interactive: false
+verbose: true
+extract_token: true
+follow_redirects: true
 ```
