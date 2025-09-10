@@ -36,8 +36,8 @@ Unified Python CLI for PAIC testing and development, combining token management,
    # Install pctl globally - run 'pctl' anywhere
    uv tool install .
    
-   # Update global installation with latest code changes
-   uv tool uninstall pctl && uv tool install .
+   # Update global installation with latest code changes (most reliable)
+   uv tool uninstall pctl && uv clean && uv tool install . --reinstall
    
    # Update your shell PATH (only needed if 'pctl' command not found after install)
    uv tool update-shell
@@ -48,7 +48,8 @@ Unified Python CLI for PAIC testing and development, combining token management,
    # Install dependencies and create virtual environment
    uv sync
    
-   # Use with 'uv run pctl' command
+   # Use with 'uv run pctl' command (always uses latest code)
+   # No need to reinstall - code changes are immediately available
    ```
 
 3. **Verify installation:**
@@ -80,6 +81,19 @@ pctl token decode "eyJ..."
 
 # Validate token structure
 pctl token validate "eyJ..."
+```
+
+### Journey Testing
+```bash
+# Run authentication journey from config
+pctl journey run pctl/configs/journey/examples/basic-login.yaml
+# (or: uv run pctl journey run pctl/configs/journey/examples/basic-login.yaml)
+
+# Run in interactive step-by-step mode
+pctl journey run pctl/configs/journey/examples/basic-login.yaml --step
+
+# Validate journey configuration
+pctl journey validate pctl/configs/journey/examples/basic-login.yaml
 ```
 
 ### ELK Stack Management
@@ -126,6 +140,9 @@ uv tool uninstall pctl
 
 ### Token Configuration
 Configuration examples are provided in `pctl/configs/token/examples/`. Copy and modify these templates for your environment.
+
+### Journey Configuration
+Configuration examples are provided in `pctl/configs/journey/examples/`. Copy and modify these templates for your authentication flows.
 
 ### ELK Configuration
 The ELK stack is automatically configured with:

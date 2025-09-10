@@ -1,5 +1,6 @@
-# MacBook Air M4 Optimized ELK Stack Configuration
+# MacBook Air M4 Optimized ELK Stack Configuration  
 # Usage: docker-compose -f docker-compose-mac.yml up -d
+version: '3.8'
 
 services:
   elasticsearch:
@@ -28,8 +29,7 @@ services:
       - "9300:9300"
     volumes:
       - elastic_data_mac:/usr/share/elasticsearch/data
-    networks:
-      - elk-network-mac
+    network_mode: host
     # Resource limits for MacBook Air
     deploy:
       resources:
@@ -50,7 +50,7 @@ services:
     image: docker.elastic.co/kibana/kibana:8.11.0
     container_name: paic-kibana-mac
     environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_HOSTS=http://localhost:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=""
       # MacBook Air optimizations
@@ -62,8 +62,7 @@ services:
       - SERVER_HOST=0.0.0.0
     ports:
       - "5601:5601"
-    networks:
-      - elk-network-mac
+    network_mode: host
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -87,6 +86,3 @@ volumes:
   elastic_data_mac:
     driver: local
 
-networks:
-  elk-network-mac:
-    driver: bridge

@@ -142,21 +142,26 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Journey Implementation 🚧
+- **Phase**: Journey Implementation ✅ **COMPLETE**
 - **Complete**: 
   - Project setup with UV and 3-layer architecture
   - Token subcommand fully migrated from TypeScript (✅ COMPLETE)
     - JWT creation and ForgeRock token exchange working
     - All output formats (token, bearer, json) functional
     - Decode and validate commands implemented
+  - Journey subcommand fully implemented (✅ COMPLETE)
+    - Complete ForgeRock authentication flow with intelligent callback matching
+    - Interactive step mode and automated execution
+    - 1:1 functionality parity with legacy TypeScript implementation
+    - Proper config management with examples/real separation
   - ELK stack management fully implemented (✅ COMPLETE)
     - Complete ELK stack management with 9 commands
     - Real-time log streaming from Frodo to Elasticsearch
     - Registry-based streamer management with process tracking
     - Cross-platform support (Linux x64, Mac ARM)
     - Clean Python distribution without build complexity
-- **Current**: Journey subcommand implementation 
-- **Legacy Reference**: TypeScript authflow journey implementation available in `examples/authflow/`
+- **Version**: 0.2.0 - All three subcommands (token, journey, elk) operational
+- **Next**: Code consistency improvements (see Known Issues below)
 
 ## ELK Subcommand Design
 
@@ -212,99 +217,86 @@ uv run pctl elk hardstop
 uv run pctl elk down
 ```
 
-## Journey Subcommand Implementation Plan
+### Journey Commands
 
-### Legacy Reference Analysis
-The TypeScript authflow implementation in `examples/authflow/` provides comprehensive journey functionality:
-
-**Key Features from Legacy Implementation:**
-- Journey initialization and step-by-step execution
-- Interactive and automated modes
-- YAML-based configuration with step definitions
-- Callback processing and response handling
-- Token extraction and success URL capture
-- Comprehensive error handling and logging
-
-### Journey Implementation Todos
-
-**Phase 1: Foundation (Current)**
-- [ ] Create `pctl/cli/journey.py` - Journey CLI commands
-- [ ] Create `pctl/services/journey/` - Journey service layer
-- [ ] Create `pctl/core/journey/` - Journey models and utilities
-- [ ] Add journey config support in `pctl/configs/journey/`
-
-**Phase 2: Core Implementation**
-- [ ] Implement `JourneyConfig` model (from legacy `JourneyConfig` interface)
-- [ ] Implement `JourneyService` with HTTP client integration
-- [ ] Create callback processing logic
-- [ ] Add step-by-step execution engine
-- [ ] Implement response parsing and token extraction
-
-**Phase 3: CLI Integration**  
-- [ ] Add `pctl journey run <config>` command
-- [ ] Add `pctl journey validate <config>` command
-- [ ] Add `pctl journey list` command (list available configs)
-- [ ] Support interactive (`--step`) and automated modes
-- [ ] Add verbose logging and progress indicators
-
-**Phase 4: Advanced Features**
-- [ ] Integration with TokenService for authenticated journeys
-- [ ] Journey templates and config generation
-- [ ] Journey debugging and troubleshooting tools
-- [ ] Performance metrics and timing analysis
-
-### Journey Command Structure
-
-**Core Commands:**
+**Available Commands:**
 - `pctl journey run <config>` - Execute authentication journey from YAML config
 - `pctl journey validate <config>` - Validate journey configuration syntax
-- `pctl journey list` - List available journey configurations
-- `pctl journey template <name>` - Generate journey config template
 
-**Options:**
+**Options for `pctl journey run`:**
 - `-s, --step` - Run in interactive step-by-step mode
-- `-t, --timeout <ms>` - Request timeout in milliseconds
+- `-t, --timeout <ms>` - Request timeout in milliseconds (default: 30000)
 - `-v, --verbose` - Enable verbose logging
-- `--dry-run` - Validate config without executing journey
 
-**Usage Examples:**
+**Examples:**
 ```bash
 # Run journey from config
 uv run pctl journey run pctl/configs/journey/real/login-flow.yaml
 
-# Run in interactive step mode
-uv run pctl journey run pctl/configs/journey/real/login-flow.yaml --step
+# Run in interactive step mode with verbose logging
+uv run pctl journey run pctl/configs/journey/real/login-flow.yaml --step --verbose
 
 # Validate journey config
 uv run pctl journey validate pctl/configs/journey/examples/basic-login.yaml
 
-# List available journey configs
-uv run pctl journey list
-
-# Generate template config
-uv run pctl journey template basic-auth > my-journey.yaml
+# Use example config (copy to real/ folder and update with actual values)
+cp pctl/configs/journey/examples/basic-login.yaml pctl/configs/journey/real/my-journey.yaml
 ```
 
-### Journey Config Format (YAML)
-```yaml
-# Journey configuration based on legacy authflow format
-platform_url: "https://your-forgerock-platform.com"
-realm: "alpha"  
-journey_name: "Login"
-timeout_ms: 30000
+## Known Issues & Improvements
 
-# Step definitions with callback responses
-steps:
-  username:
-    prompt: "User Name"
-    value: "demo"
-  password:
-    prompt: "Password" 
-    value: "changeit"
-  
-# Optional settings
-interactive: false
-verbose: true
-extract_token: true
-follow_redirects: true
-```
+### **ELK Subcommand Consistency Issues**
+
+The ELK subcommand was implemented early and has some inconsistencies compared to the established patterns used by token and journey subcommands:
+
+#### **❌ Issues in ELK Service (`pctl/services/elk/elk_service.py`):**
+
+1. **Unused/Legacy Imports:**
+   ```python
+   import json        # ❌ Not used - should be removed
+   import yaml        # ❌ Not used - ConfigLoader handles YAML 
+   import httpx       # ❌ Direct httpx usage instead of shared HTTPClient
+   ```
+
+2. **HTTP Client Inconsistency:**
+   ```python
+   # ❌ Current (inconsistent):
+   import httpx
+   
+   # ✅ Should be (like token/journey):
+   from ...core.http_client import HTTPClient
+   ```
+
+#### **❌ Issues in ELK CLI (`pctl/cli/elk.py`):**
+
+1. **Missing Logger Setup:**
+   ```python
+   # ❌ Missing (inconsistent):
+   from ..core.logger import setup_logger
+   
+   # ✅ Should import like token/journey CLIs
+   ```
+
+#### **✅ Comparison - Token & Journey are Consistent:**
+
+**Token/Journey Services properly use:**
+- ✅ `ConfigLoader` for YAML handling
+- ✅ `HTTPClient` for HTTP requests  
+- ✅ `self.logger = logger` pattern
+- ✅ Clean imports without unused modules
+
+**Token/Journey CLIs properly use:**
+- ✅ `setup_logger` for consistent logging setup
+- ✅ Proper exception imports and handling
+
+#### **🔧 Future Refactoring Tasks:**
+
+1. Remove unused imports from ELK service (`json`, `yaml`)
+2. Replace direct `httpx` usage with shared `HTTPClient` 
+3. Add missing `setup_logger` import to ELK CLI
+4. Verify all ELK HTTP calls work with shared `HTTPClient`
+5. Update any YAML operations to use `ConfigLoader` consistently
+
+**Priority:** Medium - functionality works perfectly, this is code quality/consistency improvement
+
+**Note:** Token and Journey subcommands are architecturally consistent and follow all established patterns correctly.
