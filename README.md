@@ -1,12 +1,16 @@
 # pctl - PAIC Control CLI
 
-Unified Python CLI for PAIC testing and development, combining token management, authentication flow testing, and local ELK stack management.
+**Version 0.3.0**
+
+Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
 ## Features
 
 - **🔐 Token Management**: Generate, decode, and validate JWT tokens for PAIC services
-- **🚀 Journey Testing**: End-to-end authentication flow testing
-- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with Frodo CLI integration
+- **🚀 Journey Testing**: End-to-end authentication flow testing with step-by-step mode
+- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis
+- **🔗 Connection Profiles**: Centralized credential and environment management
+- **⚡ Dual Input Modes**: Use CLI flags or YAML configuration files
 
 ## Prerequisites
 
@@ -70,11 +74,34 @@ Unified Python CLI for PAIC testing and development, combining token management,
 
 ## Quick Start
 
+### Connection Management
+
+First, set up connection profiles for your PAIC environments:
+
+```bash
+# Create connection profile using flags
+pctl conn add myenv \
+  --platform https://openam-myenv.id.forgerock.io \
+  --sa-id "your-service-account-id" \
+  --sa-jwk-file /path/to/service-account.jwk
+
+# Or create from config file
+pctl conn add myenv --config /path/to/connection-config.yaml
+
+# List all profiles
+pctl conn list
+
+# Show profile details
+pctl conn show myenv
+
+# Delete profile
+pctl conn delete myenv
+```
+
 ### Token Management
 ```bash
 # Generate a service account token
 pctl token get -c pctl/configs/token/examples/service-account.yaml
-# (or: uv run pctl token get -c pctl/configs/token/examples/service-account.yaml)
 
 # Decode a JWT token
 pctl token decode "eyJ..."
@@ -87,7 +114,6 @@ pctl token validate "eyJ..."
 ```bash
 # Run authentication journey from config
 pctl journey run pctl/configs/journey/examples/basic-login.yaml
-# (or: uv run pctl journey run pctl/configs/journey/examples/basic-login.yaml)
 
 # Run in interactive step-by-step mode
 pctl journey run pctl/configs/journey/examples/basic-login.yaml --step
@@ -138,6 +164,24 @@ uv tool uninstall pctl
 
 ## Configuration
 
+### Connection Profiles
+
+Connection profiles store environment credentials and configuration:
+
+```yaml
+# Example: pctl/configs/conn/examples/connection.yaml
+platform: "https://openam-env.id.forgerock.io"
+sa_id: "service-account-id"
+sa_jwk: '{"kty":"RSA","kid":"example",...}'  # Direct JSON string
+# OR
+sa_jwk_file: "/path/to/jwk.json"  # File path (relative to config file)
+log_api_key: "optional-log-key"
+log_api_secret: "optional-log-secret"
+admin_username: "optional-admin"
+admin_password: "optional-password"
+description: "Environment description"
+```
+
 ### Token Configuration
 Configuration examples are provided in `pctl/configs/token/examples/`. Copy and modify these templates for your environment.
 
@@ -150,13 +194,6 @@ The ELK stack is automatically configured with:
 - **Kibana**: Available at http://localhost:5601
 - **Data Views**: Pre-configured for `paic-logs-*` pattern
 - **Index Lifecycle**: 7-day retention with daily rollover
-
-## Architecture
-
-pctl follows a 3-layer architecture:
-- **CLI Layer**: User interface (Click commands)
-- **Service Layer**: Business logic and cross-command communication
-- **Core Layer**: Shared utilities (HTTP, config, logging, platform detection)
 
 ## Installation Verification
 

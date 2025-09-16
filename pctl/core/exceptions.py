@@ -22,3 +22,18 @@ class JourneyError(ServiceError):
 class ELKError(ServiceError):
     """ELK service errors"""
     pass
+
+
+class PAICError(ServiceError):
+    """PAIC service errors"""
+    pass
+
+
+class ConnectionError(PAICError):
+    """PAIC connection profile errors"""
+    pass
+
+
+class AuthenticationError(PAICError):
+    """PAIC authentication errors"""
+    pass

@@ -1,0 +1,6 @@
+platform: "https://config-example.com"
+sa_id: "config-test-123"
+sa_jwk: '{"kty":"RSA","test":"config"}'
+log_api_key: "test-key"
+log_api_secret: "test-secret"
+description: "Connection from config file"

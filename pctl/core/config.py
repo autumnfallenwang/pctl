@@ -10,6 +10,36 @@ from loguru import logger
 from .exceptions import ConfigError
 
 
+class PathConfig:
+    """Centralized path configuration for pctl"""
+
+    @staticmethod
+    def get_pctl_home() -> Path:
+        """Get pctl home directory: ~/.pctl/"""
+        return Path.home() / ".pctl"
+
+    @staticmethod
+    def get_connections_file() -> Path:
+        """Get connection profiles file: ~/.pctl/connections.json"""
+        return PathConfig.get_pctl_home() / "connections.json"
+
+    @staticmethod
+    def get_streamers_file() -> Path:
+        """Get streamers registry file: ~/.pctl/streamers.json"""
+        return PathConfig.get_pctl_home() / "streamers.json"
+
+    @staticmethod
+    def get_logs_dir() -> Path:
+        """Get logs directory: ~/.pctl/logs/"""
+        return PathConfig.get_pctl_home() / "logs"
+
+    @staticmethod
+    def ensure_pctl_dirs() -> None:
+        """Ensure all pctl directories exist"""
+        PathConfig.get_pctl_home().mkdir(parents=True, exist_ok=True)
+        PathConfig.get_logs_dir().mkdir(parents=True, exist_ok=True)
+
+
 class ConfigLoader:
     """Core utility for configuration loading and parsing"""
     
