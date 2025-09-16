@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import click
 
-from ..services.conn.connection_service import ConnectionService
+from ..services.conn.conn_service import ConnectionService
 from ..core.exceptions import ConfigError, ServiceError
 from ..core.logger import setup_logger
 
