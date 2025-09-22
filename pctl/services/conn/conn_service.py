@@ -29,13 +29,24 @@ class ConnectionService:
         self.logger = logger
         self.connection_manager = ConnectionManager()
         self.config_loader = ConfigLoader()
+        # Import here to avoid circular imports (service-to-service communication)
+        self._token_service = None
 
-    def create_profile(self, profile_data: Dict[str, Any]) -> Dict[str, Any]:
+    @property
+    def token_service(self):
+        """Lazy load TokenService to avoid circular imports"""
+        if self._token_service is None:
+            from ..token.token_service import TokenService
+            self._token_service = TokenService()
+        return self._token_service
+
+    def create_profile(self, profile_data: Dict[str, Any], validate: bool = True) -> Dict[str, Any]:
         """
         Create new connection profile with business validation
 
         Args:
             profile_data: Profile data dict for cross-service communication
+            validate: Whether to validate credentials (default: True)
 
         Returns:
             Dict with creation result for service-to-service calls
@@ -53,16 +64,52 @@ class ConnectionService:
             if issues:
                 raise ServiceError(f"Profile validation failed: {', '.join(issues)}")
 
-            # Save profile
+            # Save profile temporarily for validation
             self.connection_manager.save_profile(profile)
 
-            self.logger.info(f"Created connection profile: {profile.name}")
+            # Credential validation workflow
+            if validate:
+                self.logger.info(f"Validating credentials for profile: {profile.name}")
 
-            return {
-                "success": True,
-                "profile_name": profile.name,
-                "message": f"Profile '{profile.name}' created successfully"
-            }
+                # Call TokenService to validate credentials
+                validation_result = asyncio.run(
+                    self.token_service.validate_connection_credentials(profile.to_dict())
+                )
+
+                if validation_result["success"]:
+                    # Mark as validated and save
+                    profile.mark_validated()
+                    self.connection_manager.save_profile(profile)
+                    self.logger.info(f"✅ Credentials validated for profile: {profile.name}")
+
+                    return {
+                        "success": True,
+                        "profile_name": profile.name,
+                        "message": f"Profile '{profile.name}' created and validated successfully",
+                        "validated": True
+                    }
+                else:
+                    # Remove profile if validation failed
+                    self.connection_manager.remove_profile(profile.name)
+                    error_msg = f"Credential validation failed: {validation_result['error']}"
+                    self.logger.error(error_msg)
+
+                    return {
+                        "success": False,
+                        "error": error_msg
+                    }
+            else:
+                # Skip validation - mark as unvalidated
+                profile.mark_unvalidated()
+                self.connection_manager.save_profile(profile)
+                self.logger.info(f"Profile '{profile.name}' created without validation")
+
+                return {
+                    "success": True,
+                    "profile_name": profile.name,
+                    "message": f"Profile '{profile.name}' created successfully (not validated)",
+                    "validated": False
+                }
 
         except Exception as e:
             self.logger.error(f"Failed to create profile: {e}")
@@ -71,7 +118,7 @@ class ConnectionService:
                 "error": str(e)
             }
 
-    def create_profile_from_config(self, config_path: Path, conn_name: str) -> Dict[str, Any]:
+    def create_profile_from_config(self, config_path: Path, conn_name: str, validate: bool = True) -> Dict[str, Any]:
         """Create connection profile from YAML config file"""
         try:
             # Load YAML config (hide async in service layer)
@@ -90,8 +137,8 @@ class ConnectionService:
                 if config_data.get(field):
                     profile_data[field] = config_data[field]
 
-            # Create the profile
-            return self.create_profile(profile_data)
+            # Create the profile with validation flag
+            return self.create_profile(profile_data, validate)
 
         except Exception as e:
             self.logger.error(f"Failed to create profile from config: {e}")
@@ -245,6 +292,78 @@ class ConnectionService:
 
         except Exception as e:
             self.logger.error(f"Failed to get default profile: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def validate_profile(self, profile_name: str) -> Dict[str, Any]:
+        """
+        Manually validate an existing connection profile
+
+        Args:
+            profile_name: Name of the profile to validate
+
+        Returns:
+            Dict with validation result for CLI communication
+        """
+        try:
+            # Check if profile exists
+            if not self.connection_manager.profile_exists(profile_name):
+                return {
+                    "success": False,
+                    "error": f"Profile '{profile_name}' not found"
+                }
+
+            # Get the profile
+            profile = self.connection_manager.get_profile(profile_name)
+
+            if not profile:
+                return {
+                    "success": False,
+                    "error": f"Failed to load profile '{profile_name}'"
+                }
+
+            # Check if already validated - skip if true
+            if profile.is_validated():
+                return {
+                    "success": True,
+                    "message": f"Profile '{profile_name}' is already validated",
+                    "already_validated": True
+                }
+
+            self.logger.info(f"Validating credentials for profile: {profile_name}")
+
+            # Call TokenService to validate credentials
+            validation_result = asyncio.run(
+                self.token_service.validate_connection_credentials(profile.to_dict())
+            )
+
+            if validation_result["success"]:
+                # Mark as validated and save
+                profile.mark_validated()
+                self.connection_manager.save_profile(profile)
+                self.logger.info(f"✅ Credentials validated for profile: {profile_name}")
+
+                return {
+                    "success": True,
+                    "message": f"Profile '{profile_name}' validated successfully",
+                    "validated": True
+                }
+            else:
+                # Validation failed - keep profile but leave as unvalidated
+                # CLI layer will handle asking user about removal
+                self.logger.error(f"❌ Validation failed for profile: {profile_name}")
+
+                return {
+                    "success": False,
+                    "error": f"Credential validation failed: {validation_result['error']}",
+                    "validation_failed": True,
+                    "profile_name": profile_name
+                }
+
+        except Exception as e:
+            self.logger.error(f"Failed to validate profile {profile_name}: {e}")
             return {
                 "success": False,
                 "error": str(e)

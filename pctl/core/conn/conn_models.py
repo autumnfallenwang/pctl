@@ -21,6 +21,7 @@ class ConnectionProfile:
     admin_username: Optional[str] = None  # Admin username (optional)
     admin_password: Optional[str] = None  # Admin password (optional)
     description: Optional[str] = None  # User description
+    validated: bool = False  # Whether credentials have been validated
 
     def __post_init__(self):
         """Post-initialization validation and auto-generation"""
@@ -75,3 +76,15 @@ class ConnectionProfile:
     def get_base_url(self) -> str:
         """Get base URL (alias for platform_url for backward compatibility)"""
         return self.platform_url
+
+    def is_validated(self) -> bool:
+        """Check if profile credentials have been validated"""
+        return self.validated
+
+    def mark_validated(self) -> None:
+        """Mark profile as validated"""
+        self.validated = True
+
+    def mark_unvalidated(self) -> None:
+        """Mark profile as unvalidated"""
+        self.validated = False

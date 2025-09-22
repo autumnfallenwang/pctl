@@ -3,12 +3,9 @@ Token CLI commands - External interface layer
 """
 
 import asyncio
-from pathlib import Path
 import click
 
 from ..services.token.token_service import TokenService
-from ..core.token.token_models import TokenError
-from ..core.exceptions import ConfigError
 from ..core.logger import setup_logger
 
 @click.group()
@@ -17,56 +14,80 @@ def token():
     pass
 
 @token.command()
-@click.option('-c', '--config', 'config_path', 
-              type=click.Path(exists=True, path_type=Path),
-              required=True,
-              help='Path to YAML token configuration file')
-@click.option('-v', '--verbose', 
-              is_flag=True,
-              help='Enable verbose logging')
+@click.argument('conn_name')
 @click.option('-f', '--format',
               type=click.Choice(['token', 'bearer', 'json']),
               default='token',
               help='Output format (default: token)')
-def get(config_path: Path, verbose: bool, format: str):
-    """Generate PAIC Service Account access token from YAML config"""
-    
+@click.option('-v', '--verbose',
+              is_flag=True,
+              help='Enable verbose logging')
+def get(conn_name: str, format: str, verbose: bool):
+    """Generate PAIC Service Account access token from connection profile
+
+    Usage:
+      # Generate token from connection profile
+      pctl token get myenv
+
+      # Get token in different formats
+      pctl token get myenv --format bearer
+      pctl token get myenv --format json
+    """
+
     # Setup logging based on verbose flag
     log_level = "DEBUG" if verbose else "INFO"
     setup_logger(log_level)
-    
-    # Run async token generation
-    asyncio.run(_get_token_async(config_path, verbose, format))
 
-async def _get_token_async(config_path: Path, verbose: bool, output_format: str):
-    """Async token generation implementation"""
-    
+    # Run async token generation
+    asyncio.run(_get_token_from_profile_async(conn_name, format, verbose))
+
+async def _get_token_from_profile_async(conn_name: str, output_format: str, verbose: bool):
+    """Async token generation from connection profile"""
+
     try:
         token_service = TokenService()
-        
+
         if verbose:
-            click.echo("Generating access token...")
-        
-        # Get token from service
-        result = await token_service.get_token(config_path)
-        
-        # Format and output token
-        formatted_output = token_service.format_token(result, output_format)
-        
-        # Always print as single line without Rich formatting for easy copy/paste
-        print(formatted_output)
-            
-        if verbose:
-            click.echo("✅ Token generated successfully")
-            
-    except ConfigError as e:
-        click.echo(f"❌ Configuration error: {e}", err=True)
-        raise click.ClickException(str(e))
-        
-    except TokenError as e:
-        click.echo(f"❌ Token error: {e}", err=True)
-        raise click.ClickException(str(e))
-        
+            click.echo(f"Generating access token for connection profile: {conn_name}")
+
+        # Get token from profile using service-to-service communication
+        result = await token_service.get_token_from_profile(conn_name)
+
+        if result["success"]:
+            token = result["token"]
+
+            # Format output according to requested format
+            if output_format == "token":
+                formatted_output = token
+            elif output_format == "bearer":
+                formatted_output = f"Bearer {token}"
+            elif output_format == "json":
+                import json
+                formatted_output = json.dumps({
+                    "access_token": token,
+                    "token_type": "Bearer",
+                    "expires_in": result.get("expires_in"),
+                    "scope": result.get("scope")
+                })
+
+            # Always print as single line without Rich formatting for easy copy/paste
+            print(formatted_output)
+
+            if verbose:
+                click.echo("✅ Token generated successfully")
+                if result.get("expires_in"):
+                    click.echo(f"   Expires in: {result['expires_in']} seconds")
+                if result.get("scope"):
+                    click.echo(f"   Scope: {result['scope']}")
+        else:
+            # Handle unvalidated profile error specially
+            if result.get("unvalidated_profile"):
+                click.echo(f"❌ {result['error']}", err=True)
+                click.echo(f"   Use 'pctl conn validate {conn_name}' to validate the connection first.", err=True)
+            else:
+                click.echo(f"❌ Failed to generate token: {result['error']}", err=True)
+            raise click.ClickException(result['error'])
+
     except Exception as e:
         click.echo(f"❌ Unexpected error: {e}", err=True)
         raise click.ClickException(f"Failed to generate token: {e}")

@@ -33,6 +33,20 @@
 - `pctl conn` - Connection profile management (service accounts, credentials)
 - `pctl log` - **[FUTURE]** Direct log analysis and searching
 
+## CLI Command Pattern
+
+**Consistent pattern across all subcommands:**
+```
+pctl <subcommand> <action> <conn_name> [options]
+```
+
+**Examples:**
+- `pctl conn add myenv --platform https://example.com --sa-id abc123`
+- `pctl conn validate myenv`
+- `pctl token get myenv --format bearer`
+- `pctl journey run config.yaml --profile myenv` (future)
+- `pctl elk start --profile myenv` (future)
+
 ## Tech Stack
 
 - **UV** - Python package manager
@@ -142,22 +156,23 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Service Integration & Cross-Command Enhancement 🚧 **IN PROGRESS**
-- **Version**: 0.3.0 - Connection management and service layer foundations complete
+- **Phase**: Service Integration Complete ✅ **COMPLETE**
+- **Version**: 0.4.0 - Cross-service integration and validation workflow complete
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
-  - ✅ **Token Subcommand**: JWT creation, ForgeRock token exchange, all output formats
+  - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
+  - ✅ **Connection Foundations**: Core layer (conn_models, conn_manager), Service layer (ConnectionService)
+  - ✅ **Token Subcommand**: JWT creation, ForgeRock token exchange, profile-based authentication
+  - ✅ **Service Integration**: ConnectionService ↔ TokenService cross-service communication
+  - ✅ **Validation Workflow**: Automatic validation on add, manual validation, validation status tracking
+  - ✅ **Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
   - ✅ **Journey Subcommand**: Complete authentication flow testing, step mode, config management
   - ✅ **ELK Subcommand**: 9 commands, log streaming via Frodo, registry-based process management
-  - ✅ **Connection Subcommand**: Profile management (add, list, show, delete), dual input modes (flags/config)
-  - ✅ **Connection Foundations**: Core layer (conn_models, conn_manager), Service layer (ConnectionService)
   - ✅ **Dynamic Versioning**: Single source of truth from pyproject.toml
-- **Current Work** (Phase 1 - Service Integration):
-  - 🎯 **Service Layer Integration**: Upgrade existing services to use ConnectionService for shared profiles
-  - 📋 **Token Service Enhancement**: Use ConnectionService for service account credentials
+- **Current Work** (Phase 2 - Service Modernization):
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
   - 📋 **ELK Service Enhancement**: Use ConnectionService instead of hardcoded configs
-- **Future Work** (Phase 2):
+- **Future Work** (Phase 3):
   - 📋 **ELK Rebuild**: Replace Frodo with direct API calls using ConnectionService
   - 📋 **Log Analysis**: Add `pctl log` commands for interactive log viewing
 
@@ -182,30 +197,28 @@ uv run pyinstaller --onefile pctl/cli/main.py
    - `pctl conn list/show/delete` - Full profile management
    - Dynamic versioning from pyproject.toml
 
-### Phase 1: Service Integration (CURRENT PRIORITY) 🎯
-**Upgrade existing services to use ConnectionService**
+### ✅ Phase 1: Service Integration (COMPLETE)
+**Token and Connection services fully integrated**
 
-**Benefits of Integration:**
-- Eliminate hardcoded platform URLs and credentials
-- Shared connection profiles across all commands
-- Consistent environment management
-- Foundation for future API client patterns
+**✅ Completed Benefits:**
+- ✅ Eliminated hardcoded platform URLs and credentials in TokenService
+- ✅ Shared connection profiles across token and connection commands
+- ✅ Consistent CLI pattern: `pctl <subcommand> <action> <conn_name>`
+- ✅ Foundation for cross-service communication established
 
-**Integration Tasks:**
-1. **Token Service Enhancement**
-   - Add `ConnectionService` integration for service account credentials
-   - Replace hardcoded config with `connection_service.get_token_config_for_profile()`
-   - Support profile selection: `pctl token get --profile myenv`
+**✅ Completed Integration:**
+1. **Token Service Integration** ✅
+   - ✅ ConnectionService ↔ TokenService cross-service communication
+   - ✅ Profile-based token generation: `pctl token get myenv`
+   - ✅ Validation workflow: Only validated profiles can generate tokens
+   - ✅ Clean service layer contracts with JSON/dict communication
 
-2. **Journey Service Enhancement**
-   - Add `ConnectionService` integration for platform URLs
-   - Replace hardcoded endpoints with profile-based URLs
-   - Support profile selection: `pctl journey run config.yaml --profile myenv`
-
-3. **ELK Service Enhancement**
-   - Add `ConnectionService` integration for environment configs
-   - Replace hardcoded environment handling with profiles
-   - Support profile selection: `pctl elk start --profile myenv`
+2. **Connection Validation System** ✅
+   - ✅ Automatic validation on profile creation (default behavior)
+   - ✅ `--no-validate` flag for offline profile creation
+   - ✅ Manual validation: `pctl conn validate myenv`
+   - ✅ Interactive removal of invalid profiles
+   - ✅ Validation status tracking in profile data
 
 ### Phase 2: API Client Foundation (NEXT)
 **Build shared API client when patterns become clear**

@@ -44,9 +44,12 @@ def conn():
 @click.option('-v', '--verbose',
               is_flag=True,
               help='Enable verbose logging')
+@click.option('--no-validate',
+              is_flag=True,
+              help='Do not validate connection credentials')
 def add(conn_name: str, platform: str, sa_id: str, sa_jwk_file: Path, sa_jwk: str,
         log_api_key: str, log_api_secret: str, admin_username: str, admin_password: str,
-        description: str, config_path: Path, verbose: bool):
+        description: str, config_path: Path, verbose: bool, no_validate: bool):
     """Add a new connection profile
 
     Usage:
@@ -64,18 +67,25 @@ def add(conn_name: str, platform: str, sa_id: str, sa_jwk_file: Path, sa_jwk: st
     try:
         connection_service = ConnectionService()
 
+        # Determine validation setting
+        validate = not no_validate
+
         # Determine input mode: config file vs flags
         if config_path:
             # Config file mode
             if verbose:
                 click.echo(f"Loading connection profile from config: {config_path}")
+                if not validate:
+                    click.echo("⚠️  Skipping credential validation")
 
-            result = connection_service.create_profile_from_config(config_path, conn_name)
+            result = connection_service.create_profile_from_config(config_path, conn_name, validate)
 
         else:
             # Flags mode
             if verbose:
                 click.echo("Creating connection profile from command line arguments")
+                if not validate:
+                    click.echo("⚠️  Skipping credential validation")
 
             profile_data = _build_profile_from_flags(
                 conn_name, platform, sa_id, sa_jwk_file, sa_jwk,
@@ -83,7 +93,7 @@ def add(conn_name: str, platform: str, sa_id: str, sa_jwk_file: Path, sa_jwk: st
             )
 
             # Create the profile
-            result = connection_service.create_profile(profile_data)
+            result = connection_service.create_profile(profile_data, validate)
 
         if result["success"]:
             click.echo(f"✅ {result['message']}")
@@ -244,6 +254,7 @@ def show(conn_name: str, verbose: bool):
             click.echo(f"   Log API configured: {'✅' if profile.get('log_api_key') and profile.get('log_api_secret') else '❌'}")
             click.echo(f"   Admin credentials configured: {'✅' if profile.get('admin_username') and profile.get('admin_password') else '❌'}")
             click.echo(f"   Service Account configured: ✅")  # Always true for valid profiles
+            click.echo(f"   Credentials validated: {'✅' if profile.get('validated', False) else '❌'}")
 
             if verbose:
                 click.echo()
@@ -253,6 +264,55 @@ def show(conn_name: str, verbose: bool):
 
         else:
             click.echo(f"❌ {result['error']}", err=True)
+            exit(1)
+
+    except Exception as e:
+        click.echo(f"❌ Unexpected error: {e}", err=True)
+        exit(1)
+
+
+@conn.command()
+@click.argument('conn_name')
+@click.option('-v', '--verbose',
+              is_flag=True,
+              help='Enable verbose logging')
+def validate(conn_name: str, verbose: bool):
+    """Validate connection profile credentials"""
+
+    # Setup logging
+    log_level = "DEBUG" if verbose else "INFO"
+    setup_logger(log_level)
+
+    try:
+        connection_service = ConnectionService()
+
+        if verbose:
+            click.echo(f"Validating connection profile: {conn_name}")
+
+        result = connection_service.validate_profile(conn_name)
+
+        if result["success"]:
+            if result.get("already_validated"):
+                click.echo(f"✅ {result['message']}")
+            else:
+                click.echo(f"✅ {result['message']}")
+                if verbose:
+                    click.echo(f"Profile '{conn_name}' is now marked as validated")
+        else:
+            if result.get("validation_failed"):
+                # Validation failed - ask user if they want to remove the profile
+                click.echo(f"❌ {result['error']}")
+
+                if click.confirm(f"Do you want to remove the invalid profile '{conn_name}'?"):
+                    delete_result = connection_service.delete_profile(conn_name)
+                    if delete_result["success"]:
+                        click.echo(f"✅ {delete_result['message']}")
+                    else:
+                        click.echo(f"❌ Failed to delete profile: {delete_result['error']}", err=True)
+                else:
+                    click.echo(f"Profile '{conn_name}' kept but remains unvalidated")
+            else:
+                click.echo(f"❌ {result['error']}", err=True)
             exit(1)
 
     except Exception as e:

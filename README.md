@@ -1,16 +1,17 @@
 # pctl - PAIC Control CLI
 
-**Version 0.3.0**
+**Version 0.4.0**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
 ## Features
 
-- **🔐 Token Management**: Generate, decode, and validate JWT tokens for PAIC services
+- **🔐 Token Management**: Profile-based JWT token generation with validation workflow
 - **🚀 Journey Testing**: End-to-end authentication flow testing with step-by-step mode
 - **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis
-- **🔗 Connection Profiles**: Centralized credential and environment management
-- **⚡ Dual Input Modes**: Use CLI flags or YAML configuration files
+- **🔗 Connection Profiles**: Centralized credential and environment management with validation
+- **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
+- **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
 
 ## Prerequisites
 
@@ -79,19 +80,25 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 First, set up connection profiles for your PAIC environments:
 
 ```bash
-# Create connection profile using flags
+# Create connection profile using flags (validates by default)
 pctl conn add myenv \
   --platform https://openam-myenv.id.forgerock.io \
   --sa-id "your-service-account-id" \
   --sa-jwk-file /path/to/service-account.jwk
 
-# Or create from config file
+# Create from config file
 pctl conn add myenv --config /path/to/connection-config.yaml
+
+# Create without validation (for offline setup)
+pctl conn add myenv --config /path/to/connection-config.yaml --no-validate
+
+# Manually validate a connection profile
+pctl conn validate myenv
 
 # List all profiles
 pctl conn list
 
-# Show profile details
+# Show profile details (includes validation status)
 pctl conn show myenv
 
 # Delete profile
@@ -100,8 +107,12 @@ pctl conn delete myenv
 
 ### Token Management
 ```bash
-# Generate a service account token
-pctl token get -c pctl/configs/token/examples/service-account.yaml
+# Generate token from connection profile
+pctl token get myenv
+
+# Get token in different formats
+pctl token get myenv --format bearer
+pctl token get myenv --format json
 
 # Decode a JWT token
 pctl token decode "eyJ..."
@@ -182,8 +193,28 @@ admin_password: "optional-password"
 description: "Environment description"
 ```
 
-### Token Configuration
-Configuration examples are provided in `pctl/configs/token/examples/`. Copy and modify these templates for your environment.
+### Connection Profile Validation
+
+pctl includes a comprehensive validation system for connection profiles:
+
+- **Automatic validation** during profile creation (default)
+- **Manual validation** for profiles created with `--no-validate`
+- **Validation status tracking** in profile data
+- **Token generation protection** - only validated profiles can generate tokens
+
+```bash
+# Profiles are validated automatically by default
+pctl conn add myenv --config connection.yaml  # validates credentials
+
+# Skip validation for offline setup
+pctl conn add myenv --config connection.yaml --no-validate
+
+# Manually validate later
+pctl conn validate myenv  # tests credentials and marks as validated
+
+# Token generation requires validated profiles
+pctl token get myenv  # only works with validated profiles
+```
 
 ### Journey Configuration
 Configuration examples are provided in `pctl/configs/journey/examples/`. Copy and modify these templates for your authentication flows.
