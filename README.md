@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.4.0**
+**Version 0.5.0**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
@@ -8,10 +8,11 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 
 - **🔐 Token Management**: Profile-based JWT token generation with validation workflow
 - **🚀 Journey Testing**: End-to-end authentication flow testing with step-by-step mode
-- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis
+- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with enhanced status display
 - **🔗 Connection Profiles**: Centralized credential and environment management with validation
 - **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
 - **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
+- **🌐 Modern HTTP Client**: Rich response objects with status codes, headers, and unified request methods
 
 ## Prerequisites
 
@@ -135,20 +136,41 @@ pctl journey validate pctl/configs/journey/examples/basic-login.yaml
 
 ### ELK Stack Management
 ```bash
-# Initialize local ELK stack
+# Initialize local ELK stack (containers + templates + policies)
 pctl elk init
 
-# Start log streaming for an environment
-pctl elk start commkentsb2
+# Start log streaming (streamer name defaults to connection profile name)
+pctl elk start myenv
 
-# Check streamer status
+# Start with custom settings and streamer name
+pctl elk start myenv --name my-streamer --log-level 3 --component idm-core,am-authentication
+
+# Check status of all streamers (shows connection profiles and document counts)
 pctl elk status
 
-# Clean old data (keeps streamer running)
-pctl elk clean commkentsb2
+# Check specific streamer status
+pctl elk status --name my-streamer
 
-# Stop streamers
+# Check ELK infrastructure health
+pctl elk health
+
+# Clean old data for specific streamer (keeps streamer running)
+pctl elk clean --name my-streamer
+
+# Stop specific streamer
+pctl elk stop --name my-streamer
+
+# Stop all streamers
 pctl elk stop
+
+# Purge streamer completely (stop + delete all data)
+pctl elk purge --name my-streamer
+
+# Stop all streamers and containers (preserves data)
+pctl elk hardstop
+
+# Remove everything (deletes all data)
+pctl elk down
 ```
 
 ## Development

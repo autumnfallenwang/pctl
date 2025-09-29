@@ -3,19 +3,20 @@ ELK Service - Internal API for ELK stack management
 """
 
 import asyncio
-import json
 import yaml
-import httpx
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from loguru import logger
 
 from ...core.elk.elk_models import ELKHealth, StreamerStatus, ProcessInfo, ELKConfig, HealthStatus
 from ...core.elk.platform import PlatformDetector
-from ...core.elk.streamer_registry import StreamerRegistry
-from ...core.subprocess_runner import SubprocessRunner
+from .streamer_manager import StreamerManager
+from ...core.http_client import HTTPClient
 from ...core.exceptions import ELKError, ServiceError
 from ...core.config import ConfigLoader
+from ...core.subprocess_runner import SubprocessRunner
+from ..conn.conn_service import ConnectionService
+from ..conn.log_service import PAICLogService
 
 
 class ELKService:
@@ -23,10 +24,14 @@ class ELKService:
     
     def __init__(self, config_dir: Optional[str] = None, require_config: bool = True):
         self.logger = logger
-        self.subprocess_runner = SubprocessRunner()
         self.platform_detector = PlatformDetector()
         self.config_loader = ConfigLoader()
-        self.streamer_registry = StreamerRegistry()
+        self.streamer_manager = StreamerManager()
+        self.http_client = HTTPClient()
+        self.subprocess_runner = SubprocessRunner()
+        # Service-to-service communication (following domain boundaries)
+        self.connection_service = ConnectionService()
+        self.log_service = PAICLogService()
         
         # Smart config path resolution for deployment
         if require_config:
@@ -118,11 +123,11 @@ class ELKService:
             platform_name=platform_config.name
         )
     
-    async def get_status(self, environment: str) -> StreamerStatus:
-        """Internal API: Get single environment streamer status"""
+    async def get_status(self, name: str) -> StreamerStatus:
+        """Internal API: Get single streamer status by name"""
         
         # Get entry from registry
-        entry = self.streamer_registry.get_streamer(environment)
+        entry = self.streamer_manager.get_streamer(name)
         
         # Check if process is running
         process_running = False
@@ -140,14 +145,14 @@ class ELKService:
                 except OSError:
                     # Process not running, mark as stopped in registry
                     process_running = False
-                    self.streamer_registry.stop_streamer(environment)
+                    self.streamer_manager.stop_streamer(name)
                     pid = None
             elif entry.status == "stopped":
                 process_running = False
                 pid = None
         
         # Get log file info
-        log_file = self._get_log_file_path(environment)
+        log_file = self._get_log_file_path(name)
         log_file_size = None
         last_activity = None
         
@@ -167,7 +172,11 @@ class ELKService:
         try:
             health = await self.check_health()
             if health.elasticsearch_healthy:
-                index_doc_count, index_size = await self._get_index_stats(environment)
+                # Get index stats using connection profile from entry
+                if entry:
+                    index_doc_count, index_size = await self._get_index_stats(entry.connection_profile)
+                else:
+                    index_doc_count, index_size = None, None
         except Exception as e:
             self.logger.debug(f"Could not get ES stats for {environment}: {e}")
         
@@ -206,7 +215,8 @@ class ELKService:
                 runtime_or_stopped = "Unknown"
 
         return StreamerStatus(
-            environment=environment,
+            environment=name,  # Use name as the identifier for display
+            connection_profile=entry.connection_profile if entry else "unknown",
             process_running=process_running,
             pid=pid,
             components=components,
@@ -224,19 +234,19 @@ class ELKService:
         """Internal API: Get all environment statuses (JSON registry only)"""
         
         # Clean up dead processes first
-        self.streamer_registry.cleanup_dead_processes()
-        
+        self.streamer_manager.cleanup_dead_processes()
+
         # Get all registered streamers (single source of truth)
-        entries = self.streamer_registry.list_streamers()
+        entries = self.streamer_manager.list_streamers()
         
-        # Get status for each registered environment
+        # Get status for each registered streamer
         statuses = []
         for entry in entries:
             try:
-                status = await self.get_status(entry.environment)
+                status = await self.get_status(entry.name)
                 statuses.append(status)
             except Exception as e:
-                self.logger.error(f"Failed to get status for {entry.environment}: {e}")
+                self.logger.error(f"Failed to get status for '{entry.name}': {e}")
         
         return statuses
     
@@ -306,9 +316,9 @@ class ELKService:
     
     # Helper methods
     
-    def _get_log_file_path(self, environment: str) -> Path:
-        """Get log file path for environment from registry"""
-        return self.streamer_registry.get_log_file_path(environment)
+    def _get_log_file_path(self, name: str) -> Path:
+        """Get log file path for streamer from registry"""
+        return self.streamer_manager.get_log_file_path(name)
     
     async def _check_containers_exist(self) -> bool:
         """Check if ELK containers exist"""
@@ -327,198 +337,207 @@ class ELKService:
     async def _check_elasticsearch_health(self) -> tuple[bool, Optional[str]]:
         """Check Elasticsearch health and return (healthy, version)"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # Check cluster health
-                health_response = await client.get("http://localhost:9200/_cluster/health")
-                
-                if health_response.status_code == 200:
-                    health_data = health_response.json()
-                    status = health_data.get("status")
-                    healthy = status in ["green", "yellow"]
-                    
-                    # Get version
-                    version = None
-                    try:
-                        version_response = await client.get("http://localhost:9200")
-                        if version_response.status_code == 200:
-                            version_data = version_response.json()
-                            version = version_data.get("version", {}).get("number")
-                    except Exception:
-                        pass  # Version is optional
-                    
-                    return healthy, version
-            
+            # Check cluster health - HTTPClient.get() returns JSON directly
+            health_data = await self.http_client.get("http://localhost:9200/_cluster/health")
+            status = health_data.get("status")
+            healthy = status in ["green", "yellow"]
+
+            # Get version
+            version = None
+            try:
+                version_data = await self.http_client.get("http://localhost:9200")
+                version = version_data.get("version", {}).get("number")
+            except Exception:
+                pass  # Version is optional
+
+            return healthy, version
+
         except Exception as e:
             self.logger.debug(f"ES health check failed: {e}")
-        
+
         return False, None
     
     async def _check_kibana_health(self) -> bool:
         """Check Kibana health"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get("http://localhost:5601/api/status")
-                
-                if response.status_code == 200:
-                    status_data = response.json()
-                    overall = status_data.get("status", {}).get("overall", {})
-                    return overall.get("level") == "available"
-                
+            # HTTPClient.get() returns JSON directly, no need to check status_code
+            status_data = await self.http_client.get("http://localhost:5601/api/status")
+            overall = status_data.get("status", {}).get("overall", {})
+            return overall.get("level") == "available"
+
         except Exception as e:
             self.logger.debug(f"Kibana health check failed: {e}")
-        
+
         return False
     
-    async def _get_index_stats(self, environment: str) -> tuple[Optional[int], Optional[str]]:
-        """Get Elasticsearch index statistics for environment"""
+    async def _get_index_stats(self, connection_profile: str) -> tuple[Optional[int], Optional[str]]:
+        """Get Elasticsearch index statistics for connection profile"""
         try:
-            index_pattern = f"paic-logs-{environment}*"
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # Get document count
-                doc_count = None
-                try:
-                    count_response = await client.get(f"http://localhost:9200/{index_pattern}/_count")
-                    if count_response.status_code == 200:
-                        count_data = count_response.json()
-                        doc_count = count_data.get("count", 0)
-                except Exception:
-                    pass
-                
-                # Get index size
-                index_size = None
-                try:
-                    size_response = await client.get(f"http://localhost:9200/_cat/indices/{index_pattern}?h=store.size&bytes=b")
-                    if size_response.status_code == 200 and size_response.text.strip():
-                        total_bytes = sum(int(line.strip()) for line in size_response.text.strip().split('\n') if line.strip())
-                        # Convert to human readable
-                        if total_bytes >= 1024**3:
-                            index_size = f"{total_bytes / 1024**3:.1f}GB"
-                        elif total_bytes >= 1024**2:
-                            index_size = f"{total_bytes / 1024**2:.1f}MB"
-                        else:
-                            index_size = f"{total_bytes / 1024:.1f}KB"
-                except Exception:
-                    pass
-                
-                return doc_count, index_size
+            index_pattern = f"paic-logs-{connection_profile}*"
+
+            # Get document count
+            doc_count = None
+            try:
+                count_data = await self.http_client.get(f"http://localhost:9200/{index_pattern}/_count")
+                if count_data:
+                    doc_count = count_data.get("count", 0)
+            except Exception:
+                pass
+
+            # Get index size using JSON format
+            index_size = None
+            try:
+                indices_response = await self.http_client.get(f"http://localhost:9200/_cat/indices/{index_pattern}?format=json")
+                if indices_response and isinstance(indices_response, list):
+                    # Parse store.size field which comes as "123kb", "45mb", etc.
+                    total_bytes = 0
+                    for idx in indices_response:
+                        size_str = idx.get('store.size', '0b')
+                        if size_str and size_str != '-':
+                            # Extract number and unit
+                            import re
+                            match = re.match(r'(\d+(?:\.\d+)?)([kmgt]?b)', size_str.lower())
+                            if match:
+                                num, unit = match.groups()
+                                num = float(num)
+                                if unit == 'kb':
+                                    total_bytes += int(num * 1024)
+                                elif unit == 'mb':
+                                    total_bytes += int(num * 1024 * 1024)
+                                elif unit == 'gb':
+                                    total_bytes += int(num * 1024 * 1024 * 1024)
+                                elif unit == 'tb':
+                                    total_bytes += int(num * 1024 * 1024 * 1024 * 1024)
+                                else:  # 'b'
+                                    total_bytes += int(num)
+
+                    # Convert to human readable
+                    if total_bytes >= 1024**3:
+                        index_size = f"{total_bytes / 1024**3:.1f}GB"
+                    elif total_bytes >= 1024**2:
+                        index_size = f"{total_bytes / 1024**2:.1f}MB"
+                    elif total_bytes >= 1024:
+                        index_size = f"{total_bytes / 1024:.1f}KB"
+                    else:
+                        index_size = f"{total_bytes}B"
+            except Exception:
+                pass
+
+            return doc_count, index_size
             
         except Exception as e:
-            self.logger.debug(f"Failed to get index stats for {environment}: {e}")
+            self.logger.debug(f"Failed to get index stats for '{connection_profile}': {e}")
             return None, None
     
     # PUBLIC APIs (called by CLI) - Additional methods
     
-    async def start_streamer(self, environment: str, config: ELKConfig) -> ProcessInfo:
-        """Start log streamer for environment (replace any existing)"""
+    async def start_streamer(self, name: str, connection_profile: str, config: ELKConfig) -> ProcessInfo:
+        """Start log streamer with given name using connection profile (replace any existing)"""
         
         # Check for existing streamer (running or stopped)
-        existing_entry = self.streamer_registry.get_streamer(environment)
+        existing_entry = self.streamer_manager.get_streamer(name)
         
         if existing_entry:
             if existing_entry.status == "running":
-                self.logger.info(f"⚠️  Replacing running streamer for {environment} (PID {existing_entry.pid})")
-                await self.stop_streamer(environment)
+                self.logger.info(f"⚠️  Replacing running streamer '{name}' (PID {existing_entry.pid})")
+                await self.stop_streamer(name)
             elif existing_entry.status == "stopped":
                 # Check if config changed
                 old_components = set(existing_entry.components)
                 new_components = set(config.component.split(','))
                 old_log_level = existing_entry.log_level
-                new_log_level = config.log_level
-                
-                if old_components != new_components or old_log_level != new_log_level:
-                    self.logger.info(f"⚠️  Configuration changed for {environment}")
-                    self.logger.info(f"   Previous: components={sorted(old_components)}, log_level={old_log_level}")
-                    self.logger.info(f"   New: components={sorted(new_components)}, log_level={new_log_level}")
+                new_connection = existing_entry.connection_profile
+
+                config_changed = (old_components != new_components or
+                                old_log_level != config.log_level or
+                                new_connection != connection_profile)
+
+                if config_changed:
+                    self.logger.info(f"⚠️  Configuration changed for '{name}'")
+                    self.logger.info(f"   Previous: conn={new_connection}, components={sorted(old_components)}, log_level={old_log_level}")
+                    self.logger.info(f"   New: conn={connection_profile}, components={sorted(new_components)}, log_level={config.log_level}")
                 else:
-                    self.logger.info(f"🔄 Restarting stopped streamer for {environment}")
-            
+                    self.logger.info(f"🔄 Restarting stopped streamer '{name}'")
+
             # Always replace existing entry (running or stopped)
         else:
-            self.logger.info(f"🚀 Starting new streamer for {environment}")
+            self.logger.info(f"🚀 Starting new streamer '{name}' using connection '{connection_profile}'")
         
         # Verify Elasticsearch connectivity first (adapted from original)
         await self._verify_elasticsearch_connection(config.elasticsearch_url)
         
         # Check if we need to create deferred data views (first streamer start)
         await self._handle_deferred_data_views()
-        
-        # Build frodo command (adapted from original streamer)
-        frodo_cmd = [
-            "frodo", "log", "tail",  # Note: original uses "log" not "logs"
-            "-c", config.component,
-            "-l", str(config.log_level),
-            environment
-        ]
-        
+
         # Get log file path
-        log_file = self._get_log_file_path(environment)
-        
-        # Create streamer command (uses current binary or python module)
+        log_file = self._get_log_file_path(name)
+
+        # Create modernized streamer command (uses PAICLogService instead of Frodo)
         import sys
-        
-        # Build command arguments for streamer module execution
+
+        # Build command arguments for modernized log streamer
         streamer_args = [
-            "--environment", environment,
+            "--profile-name", connection_profile,  # Use connection profile for PAIC credentials
+            "--source", config.component,
+            "--level", str(config.log_level),
             "--elasticsearch-url", config.elasticsearch_url,
             "--batch-size", str(config.batch_size),
             "--flush-interval", str(config.flush_interval),
             "--template-name", config.template_name,
             "--log-file", str(log_file),
-            "--frodo-cmd", " ".join(frodo_cmd),
         ]
-        
+
         if config.verbose:
             streamer_args.append("--verbose")
-        
-        # Execute streamer module with current Python environment
-        streamer_cmd = [sys.executable, "-m", "pctl.core.elk.streamer_process"] + streamer_args
-        
+
+        # Execute modernized streamer module with current Python environment
+        streamer_cmd = [sys.executable, "-m", "pctl.services.elk.log_streamer"] + streamer_args
+
         # Start background process (no PID file needed, we use registry)
         pid = self.subprocess_runner.start_background_process_simple(
             streamer_cmd, log_file
         )
-        
-        # Register in streamer registry
-        self.streamer_registry.register_streamer(
-            environment=environment,
+
+        # Register in streamer manager (updated for new arguments)
+        self.streamer_manager.register_streamer(
+            name=name,
+            connection_profile=connection_profile,
             pid=pid,
             components=config.component.split(','),
             log_level=config.log_level,
-            frodo_cmd=frodo_cmd,
             elasticsearch_url=config.elasticsearch_url,
             batch_size=config.batch_size,
             flush_interval=config.flush_interval
         )
         
-        self.logger.info(f"🚀 Started streamer for {environment} (PID {pid})")
+        self.logger.info(f"🚀 Started streamer '{name}' using connection '{connection_profile}' (PID {pid})")
         self.logger.info(f"   📝 Logs: {log_file}")
         
         return ProcessInfo(
             pid=pid,
             log_file=str(log_file),
             pid_file=None,  # No longer using PID files
-            environment=environment
+            environment=name  # Use name as identifier
         )
     
-    async def stop_streamer(self, environment: str) -> bool:
-        """Stop log streamer for environment"""
+    async def stop_streamer(self, name: str) -> bool:
+        """Stop log streamer by name"""
         
-        status = await self.get_status(environment)
+        status = await self.get_status(name)
         if not status.process_running:
-            self.logger.warning(f"Streamer for {environment} not running")
+            self.logger.warning(f"Streamer '{name}' not running")
             return False
         
         # Stop process
         success = self.subprocess_runner.stop_process_by_pid(status.pid)
         
         # Mark as stopped in registry (keep entry)
-        self.streamer_registry.stop_streamer(environment)
+        self.streamer_manager.stop_streamer(name)
         
         if success:
-            self.logger.info(f"✅ Stopped streamer for {environment}")
+            self.logger.info(f"✅ Stopped streamer '{name}'")
         else:
-            self.logger.error(f"❌ Failed to stop streamer for {environment}")
+            self.logger.error(f"❌ Failed to stop streamer '{name}'")
         
         return success
     
@@ -530,64 +549,68 @@ class ELKService:
         
         for status in statuses:
             if status.process_running:
-                success = await self.stop_streamer(status.environment)
+                success = await self.stop_streamer(status.environment)  # environment field contains the name
                 if success:
                     stopped_count += 1
         
         return stopped_count
     
-    async def clean_environment_data(self, environment: str) -> None:
-        """Clean environment data while keeping streamer running"""
+    async def clean_environment_data(self, connection_profile: str) -> None:
+        """Clean data for connection profile while keeping streamers running"""
         
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # First, get all indices matching the pattern
-                cat_response = await client.get(f"http://localhost:9200/_cat/indices/paic-logs-{environment}*?format=json")
-                
-                if cat_response.status_code == 200:
-                    indices_data = cat_response.json()
-                    indices_to_delete = [idx['index'] for idx in indices_data]
-                    
-                    if not indices_to_delete:
-                        self.logger.info(f"🧹 No data found for {environment} (already clean)")
-                        return
-                    
-                    # Delete each index individually
-                    deleted_count = 0
-                    for index_name in indices_to_delete:
-                        delete_response = await client.delete(f"http://localhost:9200/{index_name}")
-                        
-                        if delete_response.status_code in [200, 404]:  # 404 means already deleted
-                            deleted_count += 1
-                        else:
-                            self.logger.warning(f"Failed to delete index {index_name}: HTTP {delete_response.status_code}")
-                    
-                    if deleted_count > 0:
-                        self.logger.info(f"🧹 Cleaned {deleted_count} indices for {environment}")
+            # First, get all indices matching the pattern
+            cat_response = await self.http_client.get_response(f"http://localhost:9200/_cat/indices/paic-logs-{connection_profile}*?format=json")
+
+            if cat_response.is_success():
+                indices_data = cat_response.json()
+                indices_to_delete = [idx['index'] for idx in indices_data]
+
+                if not indices_to_delete:
+                    self.logger.info(f"🧹 No data found for '{connection_profile}' (already clean)")
+                    return
+
+                # Delete each index individually
+                deleted_count = 0
+                for index_name in indices_to_delete:
+                    delete_response = await self.http_client.delete_response(f"http://localhost:9200/{index_name}")
+
+                    if delete_response.status_code in [200, 404]:  # 404 means already deleted
+                        deleted_count += 1
                     else:
-                        raise ELKError(f"Failed to delete any indices for {environment}")
-                        
-                elif cat_response.status_code == 404:
-                    self.logger.info(f"🧹 No data found for {environment} (already clean)")
+                        self.logger.warning(f"Failed to delete index {index_name}: HTTP {delete_response.status_code}")
+
+                if deleted_count > 0:
+                    self.logger.info(f"🧹 Cleaned {deleted_count} indices for '{connection_profile}'")
                 else:
-                    raise ELKError(f"Failed to list indices for {environment}: HTTP {cat_response.status_code}")
-                    
-        except httpx.RequestError as e:
-            raise ELKError(f"Failed to clean data for {environment}: {e}")
+                    raise ELKError(f"Failed to delete any indices for '{connection_profile}'")
+
+            elif cat_response.status_code == 404:
+                self.logger.info(f"🧹 No data found for '{connection_profile}' (already clean)")
+            else:
+                raise ELKError(f"Failed to list indices for '{connection_profile}': HTTP {cat_response.status_code}")
+
+        except Exception as e:
+            raise ELKError(f"Failed to clean data for '{connection_profile}': {e}")
     
-    async def purge_environment(self, environment: str) -> None:
-        """Purge environment completely (stop + delete)"""
+    async def purge_streamer(self, name: str) -> None:
+        """Purge streamer completely (stop + delete data for its connection)"""
         
+        # Get streamer entry to find connection profile
+        entry = self.streamer_manager.get_streamer(name)
+        if not entry:
+            raise ELKError(f"Streamer '{name}' not found")
+
         # Stop streamer first
-        await self.stop_streamer(environment)
-        
-        # Clean data
-        await self.clean_environment_data(environment)
-        
+        await self.stop_streamer(name)
+
+        # Clean data for the connection profile
+        await self.clean_environment_data(entry.connection_profile)
+
         # Remove from registry completely
-        self.streamer_registry.unregister_streamer(environment)
-        
-        self.logger.info(f"💥 Purged environment {environment} completely")
+        self.streamer_manager.unregister_streamer(name)
+
+        self.logger.info(f"💪 Purged streamer '{name}' (connection: '{entry.connection_profile}') completely")
     
     async def stop_containers(self) -> None:
         """Stop ELK containers"""
@@ -618,7 +641,7 @@ class ELKService:
         
         if result.success:
             # Clear all streamers from registry (down = complete removal)
-            cleared_count = self.streamer_registry.clear_all_streamers()
+            cleared_count = self.streamer_manager.clear_all_streamers()
             if cleared_count > 0:
                 self.logger.info(f"🧹 Cleared {cleared_count} streamers from registry")
             self.logger.info("💥 Removed ELK containers and volumes")
@@ -628,20 +651,11 @@ class ELKService:
     async def _verify_elasticsearch_connection(self, elasticsearch_url: str) -> None:
         """Verify Elasticsearch connectivity (adapted from original)"""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(elasticsearch_url.rstrip('/'))
-                
-                if response.status_code == 200:
-                    es_info = response.json()
-                    version = es_info.get("version", {}).get("number", "unknown")
-                    self.logger.info(f"✅ Elasticsearch connected (v{version})")
-                else:
-                    raise ELKError(f"Elasticsearch not responding: HTTP {response.status_code}")
-                    
-        except httpx.RequestError as e:
-            raise ELKError(f"Elasticsearch not responding: {e}")
-        except json.JSONDecodeError:
-            raise ELKError(f"Invalid response from Elasticsearch at {elasticsearch_url}")
+            # HTTPClient.get() returns JSON directly and raises exception if not 200
+            es_info = await self.http_client.get(elasticsearch_url.rstrip('/'))
+            version = es_info.get("version", {}).get("number", "unknown")
+            self.logger.info(f"✅ Elasticsearch connected (v{version})")
+
         except Exception as e:
             raise ELKError(f"Cannot connect to Elasticsearch: {e}")
     
@@ -698,25 +712,24 @@ class ELKService:
                     }
                 }
                 
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.put(
-                        f"http://localhost:9200/_ilm/policy/{policy_name}",
-                        headers={"Content-Type": "application/json"},
-                        json=policy_payload
-                    )
-                    
-                    if response.status_code == 200 and response.json().get("acknowledged", False):
-                        phases = policy_config.get('phases', {})
-                        hot_phase = phases.get('hot', {}).get('actions', {}).get('rollover', {})
-                        delete_phase = phases.get('delete', {})
-                    
-                        self.logger.info(f"✅ Lifecycle policy '{policy_name}' created")
-                        if hot_phase:
-                            self.logger.info(f"   🔄 Rollover: {hot_phase.get('max_size', 'N/A')}, {hot_phase.get('max_age', 'N/A')}")
-                        if delete_phase:
-                            self.logger.info(f"   🗑️  Delete: After {delete_phase.get('min_age', 'N/A')}")
-                    else:
-                        self.logger.warning(f"⚠️  Failed to create lifecycle policy '{policy_name}': HTTP {response.status_code}")
+                response = await self.http_client.put_response(
+                    f"http://localhost:9200/_ilm/policy/{policy_name}",
+                    headers={"Content-Type": "application/json"},
+                    json=policy_payload
+                )
+
+                if response.is_success() and response.json().get("acknowledged", False):
+                    phases = policy_config.get('phases', {})
+                    hot_phase = phases.get('hot', {}).get('actions', {}).get('rollover', {})
+                    delete_phase = phases.get('delete', {})
+
+                    self.logger.info(f"✅ Lifecycle policy '{policy_name}' created")
+                    if hot_phase:
+                        self.logger.info(f"   🔄 Rollover: {hot_phase.get('max_size', 'N/A')}, {hot_phase.get('max_age', 'N/A')}")
+                    if delete_phase:
+                        self.logger.info(f"   🗑️  Delete: After {delete_phase.get('min_age', 'N/A')}")
+                else:
+                    self.logger.warning(f"⚠️  Failed to create lifecycle policy '{policy_name}': HTTP {response.status_code}")
                     
             except Exception as e:
                 self.logger.warning(f"⚠️  Failed to create lifecycle policy '{policy_name}': {e}")
@@ -741,20 +754,19 @@ class ELKService:
                     "_meta": template_config.get('_meta', {})
                 }
                 
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.put(
-                        f"http://localhost:9200/_index_template/{template_name}",
-                        headers={"Content-Type": "application/json"},
-                        json=template_payload
-                    )
-                    
-                    if response.status_code == 200 and response.json().get("acknowledged", False):
-                        priority = template_config.get('priority', 500)
-                        patterns = template_config.get('index_patterns', [])
-                        self.logger.info(f"✅ Index template '{template_name}' created (priority: {priority})")
-                        self.logger.info(f"   📋 Patterns: {', '.join(patterns)}")
-                    else:
-                        self.logger.warning(f"⚠️  Failed to create index template '{template_name}': HTTP {response.status_code}")
+                response = await self.http_client.put_response(
+                    f"http://localhost:9200/_index_template/{template_name}",
+                    headers={"Content-Type": "application/json"},
+                    json=template_payload
+                )
+
+                if response.is_success() and response.json().get("acknowledged", False):
+                    priority = template_config.get('priority', 500)
+                    patterns = template_config.get('index_patterns', [])
+                    self.logger.info(f"✅ Index template '{template_name}' created (priority: {priority})")
+                    self.logger.info(f"   📋 Patterns: {', '.join(patterns)}")
+                else:
+                    self.logger.warning(f"⚠️  Failed to create index template '{template_name}': HTTP {response.status_code}")
                     
             except Exception as e:
                 self.logger.warning(f"⚠️  Failed to create index template '{template_name}': {e}")
@@ -779,25 +791,24 @@ class ELKService:
                     }
                 }
                 
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    response = await client.post(
-                        "http://localhost:5601/api/data_views/data_view",
-                        headers={
-                            "Content-Type": "application/json",
-                            "kbn-xsrf": "true"
-                        },
-                        json=dataview_payload
-                    )
-                    
-                    if response.status_code in [200, 201] and "data_view" in response.text:
-                        view_name = view_config.get('name', view_id)
-                        view_title = view_config.get('title', '')
-                        self.logger.info(f"✅ Kibana data view '{view_name}' created")
-                        self.logger.info(f"   📋 Index pattern: {view_title}")
-                        self.logger.info(f"   📈 Access via: http://localhost:5601 → Analytics → Discover")
-                    else:
-                        self.logger.warning(f"⚠️  Failed to create Kibana data view '{view_id}' (Kibana may not be ready yet)")
-                    self.logger.debug(f"Response: {response.text}")
+                response = await self.http_client.post_response(
+                    "http://localhost:5601/api/data_views/data_view",
+                    headers={
+                        "Content-Type": "application/json",
+                        "kbn-xsrf": "true"
+                    },
+                    json=dataview_payload
+                )
+
+                if response.status_code in [200, 201] and "data_view" in response.text:
+                    view_name = view_config.get('name', view_id)
+                    view_title = view_config.get('title', '')
+                    self.logger.info(f"✅ Kibana data view '{view_name}' created")
+                    self.logger.info(f"   📋 Index pattern: {view_title}")
+                    self.logger.info(f"   📈 Access via: http://localhost:5601 → Analytics → Discover")
+                else:
+                    self.logger.warning(f"⚠️  Failed to create Kibana data view '{view_id}' (Kibana may not be ready yet)")
+                self.logger.debug(f"Response: {response.text}")
                     
             except Exception as e:
                 self.logger.warning(f"⚠️  Failed to create Kibana data view '{view_id}': {e}")
@@ -839,16 +850,15 @@ class ELKService:
         """Check if any data views with the given names already exist"""
         
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(
-                    "http://localhost:5601/api/data_views",
-                    headers={"kbn-xsrf": "true"}
-                )
-                
-                if response.status_code == 200:
-                    data_views = response.json()
-                    existing_names = {dv.get('name', '') for dv in data_views.get('data_view', [])}
-                    return any(name in existing_names for name in view_names)
+            response = await self.http_client.get_response(
+                "http://localhost:5601/api/data_views",
+                headers={"kbn-xsrf": "true"}
+            )
+
+            if response.is_success():
+                data_views = response.json()
+                existing_names = {dv.get('name', '') for dv in data_views.get('data_view', [])}
+                return any(name in existing_names for name in view_names)
             
         except Exception as e:
             self.logger.debug(f"Failed to check existing data views: {e}")
@@ -861,34 +871,33 @@ class ELKService:
         for view_id, view_config in data_views_config.items():
             try:
                 # Get existing data views to find the ID
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.get(
-                        "http://localhost:5601/api/data_views",
-                        headers={"kbn-xsrf": "true"}
-                    )
-                    
-                    if response.status_code == 200:
-                        data_views = response.json()
-                        view_name = view_config.get('name', view_id)
-                        
-                        # Find our data view
-                        for dv in data_views.get('data_view', []):
-                            if dv.get('name') == view_name:
-                                data_view_id = dv.get('id')
-                                
-                                # Refresh fields
-                                refresh_response = await client.post(
-                                    f"http://localhost:5601/api/data_views/data_view/{data_view_id}/fields",
-                                    headers={
-                                        "Content-Type": "application/json",
-                                        "kbn-xsrf": "true"
-                                    },
-                                    json={}
-                                )
-                                
-                                if refresh_response.status_code == 200:
-                                    self.logger.info(f"🔄 Refreshed fields for data view '{view_name}'")
-                                break
+                response = await self.http_client.get_response(
+                    "http://localhost:5601/api/data_views",
+                    headers={"kbn-xsrf": "true"}
+                )
+
+                if response.is_success():
+                    data_views = response.json()
+                    view_name = view_config.get('name', view_id)
+
+                    # Find our data view
+                    for dv in data_views.get('data_view', []):
+                        if dv.get('name') == view_name:
+                            data_view_id = dv.get('id')
+
+                            # Refresh fields
+                            refresh_response = await self.http_client.post_response(
+                                f"http://localhost:5601/api/data_views/data_view/{data_view_id}/fields",
+                                headers={
+                                    "Content-Type": "application/json",
+                                    "kbn-xsrf": "true"
+                                },
+                                json={}
+                            )
+
+                            if refresh_response.is_success():
+                                self.logger.info(f"🔄 Refreshed fields for data view '{view_name}'")
+                            break
                             
             except Exception as e:
                 self.logger.debug(f"Failed to refresh data view fields for '{view_id}': {e}")

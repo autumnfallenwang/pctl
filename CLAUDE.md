@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Service Integration Complete ✅ **COMPLETE**
-- **Version**: 0.4.0 - Cross-service integration and validation workflow complete
+- **Phase**: HTTPClient Modernization Complete ✅ **COMPLETE**
+- **Version**: 0.5.0 - HTTPClient redesign and ELK service enhancement complete
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -169,9 +169,11 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **Journey Subcommand**: Complete authentication flow testing, step mode, config management
   - ✅ **ELK Subcommand**: 9 commands, log streaming via Frodo, registry-based process management
   - ✅ **Dynamic Versioning**: Single source of truth from pyproject.toml
+  - ✅ **HTTPClient Modernization**: Rich HTTPResponse objects, status code access, unified request methods
+  - ✅ **ELK Service Enhancement**: Updated to use new HTTPClient methods, fixed status display issues
 - **Current Work** (Phase 2 - Service Modernization):
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
-  - 📋 **ELK Service Enhancement**: Use ConnectionService instead of hardcoded configs
+  - 📋 **ProcessManager Development**: Unified process management (planned - see dev/process-manager-upgrade-plan.md)
 - **Future Work** (Phase 3):
   - 📋 **ELK Rebuild**: Replace Frodo with direct API calls using ConnectionService
   - 📋 **Log Analysis**: Add `pctl log` commands for interactive log viewing
@@ -220,20 +222,41 @@ uv run pyinstaller --onefile pctl/cli/main.py
    - ✅ Interactive removal of invalid profiles
    - ✅ Validation status tracking in profile data
 
-### Phase 2: API Client Foundation (NEXT)
-**Build shared API client when patterns become clear**
+### ✅ Phase 2: HTTPClient Modernization (COMPLETE)
+**Modern HTTP client with rich response objects and unified methods**
 
-1. **Extract Common Patterns**
-   - After service integration, identify shared API patterns
-   - Build `PAICAPIClient` for common operations
-   - Replace individual HTTP calls with unified client
+**✅ Completed Components:**
+1. **HTTPClient Redesign** (`pctl/core/http_client.py`)
+   - ✅ Rich HTTPResponse objects with status_code, headers, text, content access
+   - ✅ New response methods: get_response(), post_response(), put_response(), delete_response()
+   - ✅ Convenience methods: get_json(), post_json(), put_json(), delete_json()
+   - ✅ Backward compatibility with existing .get(), .post() methods
+
+2. **ELK Service Integration** (`pctl/services/elk/elk_service.py`)
+   - ✅ Updated 8 critical locations to use new response methods
+   - ✅ Fixed document count and index size calculation issues
+   - ✅ Enhanced status display with connection profile information
+   - ✅ All ELK commands tested and working with new HTTPClient
+
+3. **Status Display Improvements** (`pctl/cli/elk.py`)
+   - ✅ Changed "Environment" to "Streamer" for clarity
+   - ✅ Added "Connection" column showing connection profiles
+   - ✅ Fixed document counts and index sizes in status display
+
+### Phase 3: Process Management Foundation (NEXT)
+**Unified process management for CLI and Python processes**
+
+1. **ProcessManager Development**
+   - Build modern unified ProcessManager (see dev/process-manager-upgrade-plan.md)
+   - Replace subprocess_runner with handle-based process management
+   - Eliminate fake CLI patterns in log streaming
 
 2. **ELK Modernization**
    - Replace Frodo subprocess with direct API calls
-   - Use shared API client for log streaming
+   - Use ProcessManager for log streaming processes
    - Improve performance and error handling
 
-### Phase 3: Advanced Features (FUTURE)
+### Phase 4: Advanced Features (FUTURE)
 **Build on proven foundations**
 
 1. **Log Analysis Commands**

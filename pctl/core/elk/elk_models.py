@@ -30,10 +30,11 @@ class ELKHealth(BaseModel):
 
 class StreamerStatus(BaseModel):
     """Individual environment streamer status"""
-    environment: str = Field(..., description="Environment name")
+    environment: str = Field(..., description="Streamer name")
+    connection_profile: str = Field(..., description="Connection profile name")
     process_running: bool = Field(..., description="Streamer process is running")
     pid: Optional[int] = Field(default=None, description="Process ID if running")
-    
+
     # Configuration info
     components: List[str] = Field(default_factory=list, description="Components being streamed")
     log_level: Optional[int] = Field(default=None, description="Log level")

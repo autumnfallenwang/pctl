@@ -3,7 +3,6 @@ ELK CLI Commands - Local ELK stack management
 """
 
 import asyncio
-from pathlib import Path
 from typing import Optional
 
 import click
@@ -71,15 +70,16 @@ async def init(ctx, verbose: bool):
 
 
 @elk.command()
-@click.argument("environment", required=False, default="commkentsb2")
-@click.option("-l", "--log-level", type=click.IntRange(1, 4), default=2, 
+@click.argument("conn_name", required=False, default="commkentsb2")
+@click.option("-n", "--name", help="Streamer name (required if you want different name than conn_name)")
+@click.option("-l", "--log-level", type=click.IntRange(1, 4), default=2,
               help="Log level (1=ERROR, 2=INFO, 3=DEBUG, 4=ALL)")
-@click.option("-c", "--component", default="idm-core", 
+@click.option("-c", "--component", default="idm-core",
               help="Log component(s) - comma separated")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.pass_context
-async def start(ctx, environment: str, log_level: int, component: str, verbose: bool):
-    """Start log streamer for environment [default: commkentsb2]"""
+async def start(ctx, conn_name: str, name: Optional[str], log_level: int, component: str, verbose: bool):
+    """Start log streamer using connection profile [default: commkentsb2]"""
     
     config_dir = ctx.obj.get('config_dir')
     try:
@@ -91,6 +91,9 @@ async def start(ctx, environment: str, log_level: int, component: str, verbose: 
             raise click.Abort()
         else:
             raise
+    # Use connection profile name as streamer name if not specified
+    streamer_name = name or conn_name
+
     config = ELKConfig(
         log_level=log_level,
         component=component,
@@ -108,19 +111,19 @@ async def start(ctx, environment: str, log_level: int, component: str, verbose: 
             health = await service.check_health()
         elif health.overall_status == HealthStatus.STOPPED:
             click.echo("Starting ELK containers...")
-            # TODO: Add start_containers method
-            await asyncio.sleep(2)  # Placeholder
+            await service.init_stack()  # init_stack handles starting stopped containers
             health = await service.check_health()
         
         if health.overall_status != HealthStatus.HEALTHY:
             raise ELKError(f"ELK infrastructure is {health.overall_status.value}")
         
         # Start streamer
-        click.echo(f"Starting streamer for {environment}...")
-        process_info = await service.start_streamer(environment, config)
+        click.echo(f"Starting streamer '{streamer_name}' using connection '{conn_name}'...")
+        process_info = await service.start_streamer(streamer_name, conn_name, config)
         
         # Display status
-        click.echo(f"\\n🚀 Streamer started for {environment}")
+        click.echo(f"\\n🚀 Streamer '{streamer_name}' started")
+        click.echo(f"   🔗 Connection: {conn_name}")
         click.echo(f"   📊 PID: {process_info.pid}")
         click.echo(f"   📝 Logs: {process_info.log_file}")
         click.echo(f"   🔧 Component: {component}")
@@ -132,23 +135,23 @@ async def start(ctx, environment: str, log_level: int, component: str, verbose: 
 
 
 @elk.command()
-@click.argument("environment", required=False)
-async def stop(environment: Optional[str]):
-    """Stop log streamer for environment, if no env given: stop all"""
+@click.option("-n", "--name", "streamer_name", help="Streamer name to stop (if not provided, stops all)")
+async def stop(streamer_name: Optional[str]):
+    """Stop log streamer by name, if no name given: stop all"""
     
     # Stop only needs PID files, not config
     service = ELKService(require_config=False)
     
     try:
-        if environment:
-            # Stop specific environment
-            click.echo(f"Stopping streamer for {environment}...")
-            success = await service.stop_streamer(environment)
-            
+        if streamer_name:
+            # Stop specific streamer
+            click.echo(f"Stopping streamer '{streamer_name}'...")
+            success = await service.stop_streamer(streamer_name)
+
             if success:
-                click.echo(f"✅ Stopped streamer for {environment}")
+                click.echo(f"✅ Stopped streamer '{streamer_name}'")
             else:
-                click.echo(f"⚠️  Streamer for {environment} was not running")
+                click.echo(f"⚠️  Streamer '{streamer_name}' was not running")
         else:
             # Stop all streamers
             click.echo("Stopping all streamers...")
@@ -165,28 +168,28 @@ async def stop(environment: Optional[str]):
 
 
 @elk.command()
-@click.argument("environment", required=False)
-async def status(environment: Optional[str]):
-    """Show streamer status for environment(s), if no env given: show all"""
+@click.option("-n", "--name", "streamer_name", help="Streamer name to check (if not provided, shows all)")
+async def status(streamer_name: Optional[str]):
+    """Show streamer status by name, if no name given: show all"""
     
     # Status only needs PID files and HTTP checks, not config
     service = ELKService(require_config=False)
     
     try:
-        if environment:
-            # Show specific environment
-            click.echo(f"Getting status for {environment}...")
-            status = await service.get_status(environment)
+        if streamer_name:
+            # Show specific streamer
+            click.echo(f"Getting status for '{streamer_name}'...")
+            status = await service.get_status(streamer_name)
             _display_single_status(status)
         else:
-            # Show all environments  
-            click.echo("Getting status for all environments...")
+            # Show all streamers
+            click.echo("Getting status for all streamers...")
             statuses = await service.get_all_statuses()
             
             if not statuses:
                 click.echo("ℹ️  No streamers found")
                 return
-            
+
             _display_multiple_statuses(statuses)
             
     except ELKError as e:
@@ -214,54 +217,60 @@ async def health():
 
 
 @elk.command()
-@click.argument("environment", required=True)
+@click.option("-n", "--name", "streamer_name", required=True, help="Streamer name to clean (required)")
 @click.option("-F", "--force", is_flag=True, help="Skip confirmation prompts")
-@click.pass_context
-async def clean(ctx, environment: str, force: bool):
-    """Clean old data (keep streamer running, clear index data) [env required]"""
-    
+async def clean(streamer_name: str, force: bool):
+    """Clean old data (keep streamer running, clear index data) [streamer name required]"""
+
     if not force:
-        if not click.confirm(f"⚠️  Clean all data for {environment}? This will delete Elasticsearch indices."):
+        if not click.confirm(f"⚠️  Clean all data for '{streamer_name}'? This will delete Elasticsearch indices."):
             click.echo("Cancelled.")
             return
-    
-    # Clean only needs Elasticsearch connection, not config files
+
+    # Clean only needs Elasticsearch connection and streamer registry, not config files
     service = ELKService(require_config=False)
-    
+
     try:
-        click.echo(f"Cleaning data for {environment}...")
-        await service.clean_environment_data(environment)
-        
-        click.echo(f"🧹 Cleaned data for {environment}")
-        
+        # Get streamer entry to find connection profile via service
+        # The ELK service already has a streamer_manager instance
+        entry = service.streamer_manager.get_streamer(streamer_name)
+
+        if not entry:
+            click.echo(f"❌ Streamer '{streamer_name}' not found", err=True)
+            raise click.Abort()
+
+        click.echo(f"Cleaning data for streamer '{streamer_name}' (connection: {entry.connection_profile})...")
+        await service.clean_environment_data(entry.connection_profile)
+
+        click.echo(f"🧹 Cleaned data for streamer '{streamer_name}'")
+
     except ELKError as e:
         click.echo(f"❌ Failed to clean data: {e}", err=True)
         raise click.Abort()
 
 
 @elk.command()
-@click.argument("environment", required=True)
+@click.option("-n", "--name", "streamer_name", required=True, help="Streamer name to purge (required)")
 @click.option("-F", "--force", is_flag=True, help="Skip confirmation prompts")
-@click.pass_context
-async def purge(ctx, environment: str, force: bool):
-    """Purge environment completely (stop streamer + delete indices) [env required]"""
-    
+async def purge(streamer_name: str, force: bool):
+    """Purge streamer completely (stop streamer + delete indices) [streamer name required]"""
+
     if not force:
-        if not click.confirm(f"💥 Purge environment {environment} completely? This will stop streamer and delete all data."):
+        if not click.confirm(f"💥 Purge streamer '{streamer_name}' completely? This will stop streamer and delete all data."):
             click.echo("Cancelled.")
             return
-    
+
     # Purge only needs PID files and Elasticsearch connection, not config files
     service = ELKService(require_config=False)
-    
+
     try:
-        click.echo(f"Purging environment {environment}...")
-        await service.purge_environment(environment)
-        
-        click.echo(f"💥 Purged environment {environment} completely")
-        
+        click.echo(f"Purging streamer '{streamer_name}'...")
+        await service.purge_streamer(streamer_name)
+
+        click.echo(f"💥 Purged streamer '{streamer_name}' completely")
+
     except ELKError as e:
-        click.echo(f"❌ Failed to purge environment: {e}", err=True)
+        click.echo(f"❌ Failed to purge streamer: {e}", err=True)
         raise click.Abort()
 
 
@@ -389,7 +398,7 @@ def _display_multiple_statuses(statuses) -> None:
     click.echo("=" * 140)
     
     # Enhanced table header with service-provided data
-    header = f"{'Environment':<15} {'Status':<12} {'PID':<8} {'Components':<20} {'Level':<5} {'Started':<19} {'Runtime/Stopped':<19} {'Docs':<8} {'Size':<8}"
+    header = f"{'Streamer':<15} {'Connection':<18} {'Status':<10} {'PID':<8} {'Components':<15} {'Level':<5} {'Started':<19} {'Runtime/Stopped':<19} {'Docs':<8} {'Size':<8}"
     click.echo(header)
     click.echo("-" * 140)
     
@@ -399,16 +408,17 @@ def _display_multiple_statuses(statuses) -> None:
         pid = str(status.pid) if status.pid else "-"
         
         # Service-provided configuration and timing data
-        components = ",".join(status.components)[:18] + ("..." if len(",".join(status.components)) > 18 else "") if status.components else "Unknown"
+        connection = status.connection_profile[:16] + ("..." if len(status.connection_profile) > 16 else "") if hasattr(status, 'connection_profile') else "unknown"
+        components = ",".join(status.components)[:13] + ("..." if len(",".join(status.components)) > 13 else "") if status.components else "Unknown"
         log_level = str(status.log_level) if status.log_level is not None else "-"
         start_time = status.start_time or "Unknown"
         runtime_or_stopped = status.runtime_or_stopped or "Unknown"
-        
+
         # Service-provided ES data
         doc_count = f"{status.index_doc_count:,}" if status.index_doc_count is not None else "-"
         index_size = status.index_size or "-"
-        
-        row = f"{status.environment:<15} {status_icon:<12} {pid:<8} {components:<20} {log_level:<5} {start_time:<19} {runtime_or_stopped:<19} {doc_count:<8} {index_size:<8}"
+
+        row = f"{status.environment:<15} {connection:<18} {status_icon:<10} {pid:<8} {components:<15} {log_level:<5} {start_time:<19} {runtime_or_stopped:<19} {doc_count:<8} {index_size:<8}"
         click.echo(row)
     
     click.echo("=" * 140)
