@@ -157,7 +157,7 @@ uv run pyinstaller --onefile pctl/cli/main.py
 ## Current Status
 
 - **Phase**: HTTPClient Modernization Complete ✅ **COMPLETE**
-- **Version**: 0.5.0 - HTTPClient redesign and ELK service enhancement complete
+- **Version**: 0.5.1 - Code cleanup, import organization, and deprecated file removal complete
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)

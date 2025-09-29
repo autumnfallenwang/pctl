@@ -3,16 +3,21 @@ ELK Service - Internal API for ELK stack management
 """
 
 import asyncio
+import os
+import re
+import sys
 import yaml
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+
 from loguru import logger
 
 from ...core.elk.elk_models import ELKHealth, StreamerStatus, ProcessInfo, ELKConfig, HealthStatus
 from ...core.elk.platform import PlatformDetector
 from .streamer_manager import StreamerManager
 from ...core.http_client import HTTPClient
-from ...core.exceptions import ELKError, ServiceError
+from ...core.exceptions import ELKError
 from ...core.config import ConfigLoader
 from ...core.subprocess_runner import SubprocessRunner
 from ..conn.conn_service import ConnectionService
@@ -138,7 +143,6 @@ class ELKService:
                 pid = entry.pid
                 try:
                     # Check if process actually exists
-                    import os
                     os.kill(pid, 0)  # Raises OSError if process doesn't exist
                     process_running = True
                     
@@ -178,7 +182,7 @@ class ELKService:
                 else:
                     index_doc_count, index_size = None, None
         except Exception as e:
-            self.logger.debug(f"Could not get ES stats for {environment}: {e}")
+            self.logger.debug(f"Could not get ES stats for {name}: {e}")
         
         # Calculate timing information
         start_time_formatted = None
@@ -191,7 +195,6 @@ class ELKService:
             log_level = entry.log_level
             
             # Format start time to local timezone
-            from datetime import datetime, timezone
             try:
                 start_dt = datetime.fromisoformat(entry.start_time.replace('Z', '+00:00'))
                 start_local = start_dt.astimezone()
@@ -210,7 +213,7 @@ class ELKService:
                 else:
                     runtime_or_stopped = "Unknown"
             except Exception as e:
-                self.logger.debug(f"Error formatting time for {environment}: {e}")
+                self.logger.debug(f"Error formatting time for {name}: {e}")
                 start_time_formatted = "Unknown"
                 runtime_or_stopped = "Unknown"
 
@@ -395,7 +398,6 @@ class ELKService:
                         size_str = idx.get('store.size', '0b')
                         if size_str and size_str != '-':
                             # Extract number and unit
-                            import re
                             match = re.match(r'(\d+(?:\.\d+)?)([kmgt]?b)', size_str.lower())
                             if match:
                                 num, unit = match.groups()
@@ -473,8 +475,6 @@ class ELKService:
         log_file = self._get_log_file_path(name)
 
         # Create modernized streamer command (uses PAICLogService instead of Frodo)
-        import sys
-
         # Build command arguments for modernized log streamer
         streamer_args = [
             "--profile-name", connection_profile,  # Use connection profile for PAIC credentials

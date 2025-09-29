@@ -3,6 +3,7 @@ Log event data models for PAIC log streaming
 Based on Frodo's LogEventSkeleton and LogEventPayloadSkeleton types
 """
 
+import re
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
@@ -102,7 +103,6 @@ class LogLevelResolver:
             else:
                 # For text/plain, extract level from message start
                 if isinstance(log_event.payload, str):
-                    import re
                     match = re.match(r'^([^:]*):.*', log_event.payload)
                     if match:
                         return match.group(1)

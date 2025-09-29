@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.5.0**
+**Version 0.5.1**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 

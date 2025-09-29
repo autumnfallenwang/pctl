@@ -3,8 +3,13 @@ Async subprocess runner for external CLI tools (common utility)
 """
 
 import asyncio
+import os
+import signal
+import subprocess
+import time
 from pathlib import Path
 from typing import Optional, List
+
 from loguru import logger
 
 from .exceptions import ServiceError
@@ -77,15 +82,12 @@ class SubprocessRunner:
         except Exception as e:
             raise ServiceError(f"Failed to execute command {' '.join(cmd)}: {e}")
     
-    def start_background_process(self, 
-                                cmd: List[str], 
+    def start_background_process(self,
+                                cmd: List[str],
                                 log_file: Path,
                                 pid_file: Path,
                                 cwd: Optional[Path] = None) -> int:
         """Start background process and return PID (synchronous) - legacy method with PID file"""
-        
-        import subprocess
-        import os
         
         try:
             # Start process in background
@@ -107,14 +109,11 @@ class SubprocessRunner:
         except Exception as e:
             raise ServiceError(f"Failed to start background process: {e}")
     
-    def start_background_process_simple(self, 
-                                       cmd: List[str], 
+    def start_background_process_simple(self,
+                                       cmd: List[str],
                                        log_file: Path,
                                        cwd: Optional[Path] = None) -> int:
         """Start background process and return PID (no PID file needed)"""
-        
-        import subprocess
-        import os
         
         try:
             # Start process in background
@@ -134,10 +133,6 @@ class SubprocessRunner:
     
     def stop_process_by_pid(self, pid: int) -> bool:
         """Stop process by PID with graceful shutdown"""
-        
-        import os
-        import signal
-        import time
         
         try:
             # Check if process exists

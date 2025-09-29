@@ -3,6 +3,10 @@ Token CLI commands - External interface layer
 """
 
 import asyncio
+import json
+import jwt
+from datetime import datetime
+
 import click
 
 from ..services.token.token_service import TokenService
@@ -62,7 +66,6 @@ async def _get_token_from_profile_async(conn_name: str, output_format: str, verb
             elif output_format == "bearer":
                 formatted_output = f"Bearer {token}"
             elif output_format == "json":
-                import json
                 formatted_output = json.dumps({
                     "access_token": token,
                     "token_type": "Bearer",
@@ -98,10 +101,6 @@ def decode(token_string: str):
     """Decode and inspect JWT token (without verification)"""
     
     try:
-        import jwt
-        import json
-        from datetime import datetime
-        
         # Decode without verification to inspect contents
         decoded = jwt.decode(token_string, options={"verify_signature": False})
         
@@ -132,9 +131,6 @@ def validate(token_string: str):
     """Validate JWT token format and basic structure"""
     
     try:
-        import jwt
-        from datetime import datetime
-        
         # Basic format validation (no signature verification)
         decoded = jwt.decode(token_string, options={"verify_signature": False})
         

@@ -3,9 +3,11 @@ Platform detection and configuration management for ELK stack
 """
 
 import platform
+import shutil
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Tuple
+
 from loguru import logger
 
 
@@ -76,8 +78,6 @@ class PlatformDetector:
     
     def check_dependencies(self) -> list[str]:
         """Check for required system dependencies"""
-        import shutil
-        
         missing_deps = []
         required_commands = ["docker", "docker-compose", "python3", "curl", "frodo"]
         
