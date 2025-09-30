@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pctl"
-version = "0.5.1"
+version = "0.5.2"
 description = "PAIC Control - Unified testing CLI for token, journey, and ELK management"
 requires-python = ">=3.13"
 dependencies = [

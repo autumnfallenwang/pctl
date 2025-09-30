@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.5.1**
+**Version 0.5.2**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
@@ -8,11 +8,12 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 
 - **🔐 Token Management**: Profile-based JWT token generation with validation workflow
 - **🚀 Journey Testing**: End-to-end authentication flow testing with step-by-step mode
-- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with enhanced status display
+- **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with direct API streaming
 - **🔗 Connection Profiles**: Centralized credential and environment management with validation
 - **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
 - **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
 - **🌐 Modern HTTP Client**: Rich response objects with status codes, headers, and unified request methods
+- **⚙️ Unified Process Manager**: Clean Python interface for background processes without argparse boilerplate
 
 ## Prerequisites
 
@@ -20,7 +21,6 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 - **Python 3.13+**
 - **UV** (Python package manager)
 - **Docker** and **Docker Compose**
-- **Frodo CLI** (ForgeRock DevOps CLI)
 - **curl**
 
 ### Supported Platforms
@@ -263,7 +263,6 @@ This script will check:
 - ✅ Docker and Docker Compose
 - ✅ Docker daemon running
 - ✅ curl availability
-- ✅ Frodo CLI installation and version
 - ✅ pctl project setup
 
 ## Troubleshooting

@@ -9,10 +9,6 @@ import asyncio
 import json
 import signal
 import sys
-import argparse
-import os
-import atexit
-from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from loguru import logger
@@ -263,51 +259,43 @@ class LogStreamer:
             self.log_message("Log streaming stopped")
 
 
-async def main():
-    """Main entry point for streamer process (compatible with original args)"""
-    parser = argparse.ArgumentParser(description="PAIC Log Streamer (modernized)")
+def run_streamer_process(
+    profile_name: str,
+    source: str,
+    level: int,
+    elasticsearch_url: str,
+    batch_size: int,
+    flush_interval: int,
+    template_name: str = "paic-logs-template",
+    verbose: bool = False
+):
+    """
+    Entry point for streamer as background process.
 
-    # Updated arguments for PAICLogService
-    parser.add_argument("--profile-name", required=True, help="Connection profile name")
-    parser.add_argument("--source", required=True, help="Log source to stream")
-    parser.add_argument("--level", type=int, default=2, help="Log level (1=ERROR, 2=INFO, 3=DEBUG, 4=ALL)")
-    parser.add_argument("--elasticsearch-url", default="http://localhost:9200", help="Elasticsearch URL")
-    parser.add_argument("--batch-size", type=int, default=50, help="Bulk indexing batch size")
-    parser.add_argument("--flush-interval", type=int, default=5, help="Buffer flush interval (seconds)")
-    parser.add_argument("--template-name", default="paic-logs-template", help="Elasticsearch template name")
-    parser.add_argument("--log-file", help="Log file path (for compatibility)")
-    parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    This function can be called directly from BackgroundProcessManager
+    without needing argparse CLI.
 
-    # Legacy arguments for backward compatibility (ignored)
-    parser.add_argument("--environment", help="Environment name (legacy, ignored)")
-    parser.add_argument("--frodo-cmd", help="Frodo command (legacy, ignored)")
-
-    args = parser.parse_args()
-
-    # Configure logging output to file if specified
-    if args.log_file:
-        logger.add(args.log_file, rotation="10 MB", retention="7 days")
-
+    Args:
+        profile_name: Connection profile name
+        source: Log source to stream
+        level: Log level (1=ERROR, 2=INFO, 3=DEBUG, 4=ALL)
+        elasticsearch_url: Elasticsearch URL
+        batch_size: Bulk indexing batch size
+        flush_interval: Buffer flush interval (seconds)
+        template_name: Elasticsearch template name
+        verbose: Verbose logging
+    """
     # Create and start streamer
     streamer = LogStreamer(
-        profile_name=args.profile_name,
-        source=args.source,
-        level=args.level,
-        elasticsearch_url=args.elasticsearch_url,
-        batch_size=args.batch_size,
-        flush_interval=args.flush_interval,
-        template_name=args.template_name,
-        verbose=args.verbose
+        profile_name=profile_name,
+        source=source,
+        level=level,
+        elasticsearch_url=elasticsearch_url,
+        batch_size=batch_size,
+        flush_interval=flush_interval,
+        template_name=template_name,
+        verbose=verbose
     )
 
-    try:
-        await streamer.start_streaming()
-    except KeyboardInterrupt:
-        logger.info("Streamer interrupted by user")
-    except Exception as e:
-        logger.error(f"Streamer crashed: {e}")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Run in asyncio event loop
+    asyncio.run(streamer.start_streaming())

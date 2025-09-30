@@ -19,9 +19,10 @@ from .streamer_manager import StreamerManager
 from ...core.http_client import HTTPClient
 from ...core.exceptions import ELKError
 from ...core.config import ConfigLoader
-from ...core.subprocess_runner import SubprocessRunner
+from ...core.process_manager import ProcessManager
 from ..conn.conn_service import ConnectionService
 from ..conn.log_service import PAICLogService
+from .log_streamer import run_streamer_process
 
 
 class ELKService:
@@ -33,7 +34,7 @@ class ELKService:
         self.config_loader = ConfigLoader()
         self.streamer_manager = StreamerManager()
         self.http_client = HTTPClient()
-        self.subprocess_runner = SubprocessRunner()
+        self.process_manager = ProcessManager()
         # Service-to-service communication (following domain boundaries)
         self.connection_service = ConnectionService()
         self.log_service = PAICLogService()
@@ -282,10 +283,11 @@ class ELKService:
         
         # Start containers
         self.logger.info("🐳 Starting ELK containers...")
-        result = await self.subprocess_runner.run_command([
-            "docker-compose", "-f", docker_compose_path.name, "up", "-d"
-        ], cwd=docker_compose_path.parent)
-        
+        result = await self.process_manager.run_and_wait(
+            cmd=["docker-compose", "-f", docker_compose_path.name, "up", "-d"],
+            cwd=docker_compose_path.parent
+        )
+
         if not result.success:
             raise ELKError(f"Failed to start containers: {result.stderr}")
         
@@ -325,14 +327,14 @@ class ELKService:
     
     async def _check_containers_exist(self) -> bool:
         """Check if ELK containers exist"""
-        result = await self.subprocess_runner.run_command([
+        result = await self.process_manager.run_and_wait(cmd=[
             "docker", "ps", "-a", "--filter", "name=paic-elastic", "--format", "{{.Names}}"
         ])
         return "paic-elastic" in result.stdout
     
     async def _check_containers_running(self) -> bool:
         """Check if ELK containers are running"""
-        result = await self.subprocess_runner.run_command([
+        result = await self.process_manager.run_and_wait(cmd=[
             "docker", "ps", "--filter", "name=paic-elastic", "--format", "{{.Names}}"
         ])
         return "paic-elastic" in result.stdout
@@ -474,29 +476,21 @@ class ELKService:
         # Get log file path
         log_file = self._get_log_file_path(name)
 
-        # Create modernized streamer command (uses PAICLogService instead of Frodo)
-        # Build command arguments for modernized log streamer
-        streamer_args = [
-            "--profile-name", connection_profile,  # Use connection profile for PAIC credentials
-            "--source", config.component,
-            "--level", str(config.log_level),
-            "--elasticsearch-url", config.elasticsearch_url,
-            "--batch-size", str(config.batch_size),
-            "--flush-interval", str(config.flush_interval),
-            "--template-name", config.template_name,
-            "--log-file", str(log_file),
-        ]
-
-        if config.verbose:
-            streamer_args.append("--verbose")
-
-        # Execute modernized streamer module with current Python environment
-        streamer_cmd = [sys.executable, "-m", "pctl.services.elk.log_streamer"] + streamer_args
-
-        # Start background process (no PID file needed, we use registry)
-        pid = self.subprocess_runner.start_background_process_simple(
-            streamer_cmd, log_file
+        # Start streamer as Python function (no more fake CLI!)
+        handle = self.process_manager.start_background(
+            func=run_streamer_process,
+            profile_name=connection_profile,
+            source=config.component,
+            level=config.log_level,
+            elasticsearch_url=config.elasticsearch_url,
+            batch_size=config.batch_size,
+            flush_interval=config.flush_interval,
+            template_name=config.template_name,
+            verbose=config.verbose,
+            log_file=log_file
         )
+
+        pid = handle.pid
 
         # Register in streamer manager (updated for new arguments)
         self.streamer_manager.register_streamer(
@@ -529,7 +523,7 @@ class ELKService:
             return False
         
         # Stop process
-        success = self.subprocess_runner.stop_process_by_pid(status.pid)
+        success = self.process_manager.stop_process_by_pid(status.pid)
         
         # Mark as stopped in registry (keep entry)
         self.streamer_manager.stop_streamer(name)
@@ -618,7 +612,7 @@ class ELKService:
         platform_config = self.platform_detector.detect_platform()
         docker_compose_path, _ = self.platform_detector.get_config_files(self.base_config_path)
         
-        result = await self.subprocess_runner.run_command([
+        result = await self.process_manager.run_and_wait(cmd=[
             "docker-compose", "-f", docker_compose_path.name, "down"
         ], cwd=docker_compose_path.parent)
         
@@ -635,7 +629,7 @@ class ELKService:
         
         docker_compose_path, _ = self.platform_detector.get_config_files(self.base_config_path)
         
-        result = await self.subprocess_runner.run_command([
+        result = await self.process_manager.run_and_wait(cmd=[
             "docker-compose", "-f", docker_compose_path.name, "down", "-v"
         ], cwd=docker_compose_path.parent)
         

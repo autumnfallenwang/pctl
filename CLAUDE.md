@@ -102,7 +102,7 @@ pctl/
 │   │   ├── http_client.py      # Shared: HTTP utilities
 │   │   ├── logger.py           # Shared: Logging setup
 │   │   ├── exceptions.py       # Shared: Custom exceptions
-│   │   ├── subprocess_runner.py # Shared: Process execution
+│   │   ├── process_manager.py  # Shared: Unified process management
 │   │   ├── version.py          # Shared: Dynamic version reading from pyproject.toml
 │   │   ├── token/              # Domain: Token-specific models and utilities
 │   │   ├── elk/                # Domain: ELK-specific models and utilities
@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: HTTPClient Modernization Complete ✅ **COMPLETE**
-- **Version**: 0.5.1 - Code cleanup, import organization, and deprecated file removal complete
+- **Phase**: ProcessManager Modernization Complete ✅ **COMPLETE**
+- **Version**: 0.5.2 - Unified process management with clean Python interface
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -167,15 +167,13 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **Validation Workflow**: Automatic validation on add, manual validation, validation status tracking
   - ✅ **Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
   - ✅ **Journey Subcommand**: Complete authentication flow testing, step mode, config management
-  - ✅ **ELK Subcommand**: 9 commands, log streaming via Frodo, registry-based process management
+  - ✅ **ELK Subcommand**: 9 commands, log streaming via direct API calls, registry-based process management
   - ✅ **Dynamic Versioning**: Single source of truth from pyproject.toml
   - ✅ **HTTPClient Modernization**: Rich HTTPResponse objects, status code access, unified request methods
   - ✅ **ELK Service Enhancement**: Updated to use new HTTPClient methods, fixed status display issues
-- **Current Work** (Phase 2 - Service Modernization):
+  - ✅ **ProcessManager**: Unified process management, clean Python interface, no argparse in workers
+- **Current Work** (Phase 3 - Future Features):
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
-  - 📋 **ProcessManager Development**: Unified process management (planned - see dev/process-manager-upgrade-plan.md)
-- **Future Work** (Phase 3):
-  - 📋 **ELK Rebuild**: Replace Frodo with direct API calls using ConnectionService
   - 📋 **Log Analysis**: Add `pctl log` commands for interactive log viewing
 
 ## Next Steps - Implementation Plan
@@ -243,18 +241,24 @@ uv run pyinstaller --onefile pctl/cli/main.py
    - ✅ Added "Connection" column showing connection profiles
    - ✅ Fixed document counts and index sizes in status display
 
-### Phase 3: Process Management Foundation (NEXT)
+### ✅ Phase 3: Process Management Foundation (COMPLETE)
 **Unified process management for CLI and Python processes**
 
-1. **ProcessManager Development**
-   - Build modern unified ProcessManager (see dev/process-manager-upgrade-plan.md)
-   - Replace subprocess_runner with handle-based process management
-   - Eliminate fake CLI patterns in log streaming
+**✅ Completed Components:**
+1. **ProcessManager Development** (`pctl/core/process_manager.py`)
+   - ✅ Built unified ProcessManager replacing subprocess_runner
+   - ✅ Clean Python function interface - no argparse needed in worker modules
+   - ✅ Uses `python -c` for direct function invocation
+   - ✅ Two flows: background (start_background) and run-and-wait (run_and_wait)
+   - ✅ Proper process detachment with os.setsid
+   - ✅ Handle-based process control (ProcessHandle with PID)
 
-2. **ELK Modernization**
-   - Replace Frodo subprocess with direct API calls
-   - Use ProcessManager for log streaming processes
-   - Improve performance and error handling
+2. **ELK Modernization** (`pctl/services/elk/`)
+   - ✅ Removed deprecated subprocess_runner.py
+   - ✅ Updated elk_service.py to use ProcessManager
+   - ✅ Cleaned up log_streamer.py - removed argparse/main()
+   - ✅ Worker just needs clean `run_streamer_process()` function
+   - ✅ All ELK commands tested and working (init, start, stop, clean, purge, down)
 
 ### Phase 4: Advanced Features (FUTURE)
 **Build on proven foundations**
