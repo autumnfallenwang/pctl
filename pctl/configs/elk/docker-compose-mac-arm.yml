@@ -5,7 +5,7 @@ version: '3.8'
 services:
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: paic-elastic-mac
+    container_name: paic-elastic
     environment:
       - discovery.type=single-node
       # MacBook Air M4 optimized: Conservative memory allocation (1.5GB max)
@@ -28,8 +28,7 @@ services:
       - "9200:9200"
       - "9300:9300"
     volumes:
-      - elastic_data_mac:/usr/share/elasticsearch/data
-    network_mode: host
+      - elastic_data:/usr/share/elasticsearch/data
     # Resource limits for MacBook Air
     deploy:
       resources:
@@ -48,9 +47,9 @@ services:
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.11.0
-    container_name: paic-kibana-mac
+    container_name: paic-kibana
     environment:
-      - ELASTICSEARCH_HOSTS=http://localhost:9200
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=""
       # MacBook Air optimizations
@@ -62,7 +61,6 @@ services:
       - SERVER_HOST=0.0.0.0
     ports:
       - "5601:5601"
-    network_mode: host
     depends_on:
       elasticsearch:
         condition: service_healthy
@@ -83,6 +81,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  elastic_data_mac:
+  elastic_data:
     driver: local
 
