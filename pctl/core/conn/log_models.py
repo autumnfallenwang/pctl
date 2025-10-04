@@ -1,6 +1,6 @@
 """
 Log event data models for PAIC log streaming
-Based on Frodo's LogEventSkeleton and LogEventPayloadSkeleton types
+Based on Frodo's LogEventSkeleton type
 """
 
 import re
@@ -10,22 +10,9 @@ from datetime import datetime
 
 
 @dataclass
-class LogEventPayload:
-    """Log event payload structure (matches Frodo's LogEventPayloadSkeleton)"""
-    context: str
-    level: str
-    logger: str
-    message: str
-    thread: str
-    timestamp: str
-    transactionId: Optional[str] = None
-    mdc: Optional[Dict[str, Any]] = None
-
-
-@dataclass
 class LogEvent:
     """Complete log event structure (matches Frodo's LogEventSkeleton)"""
-    payload: Union[str, LogEventPayload]  # Can be string or structured payload
+    payload: Union[str, Dict[str, Any]]  # Can be string or any dict structure (no assumptions)
     timestamp: str
     type: str
     source: str
@@ -96,9 +83,8 @@ class LogLevelResolver:
         """
         try:
             if log_event.type != 'text/plain':
-                if isinstance(log_event.payload, LogEventPayload):
-                    return log_event.payload.level
-                elif isinstance(log_event.payload, dict):
+                # Payload is a dict - try to get 'level' field
+                if isinstance(log_event.payload, dict):
                     return log_event.payload.get('level')
             else:
                 # For text/plain, extract level from message start

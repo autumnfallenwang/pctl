@@ -10,7 +10,7 @@ from urllib.parse import quote
 from loguru import logger
 
 from .conn_models import ConnectionProfile
-from .log_models import LogEvent, LogEventPayload, PagedLogResult, LogLevelResolver, NoiseFilter
+from .log_models import LogEvent, PagedLogResult, LogLevelResolver, NoiseFilter
 from ..http_client import HTTPClient
 from ..exceptions import ServiceError
 
@@ -106,8 +106,7 @@ class PAICLogAPI:
             url += f"&transactionId={txid}"
 
         if query_filter:
-            filter_param = f"_queryFilter={query_filter}"
-            url += f"&{quote(filter_param)}"
+            url += f"&_queryFilter={quote(query_filter)}"
 
         if cookie:
             url += f"&_pagedResultsCookie={quote(cookie)}"
@@ -181,7 +180,7 @@ class PAICLogAPI:
     def _parse_log_event(self, event_data: Dict[str, Any]) -> Optional[LogEvent]:
         """
         Parse raw log event data into LogEvent model
-        Handles both structured payloads and text/plain events
+        Handles both string and dict payloads with no assumptions about structure
         """
         try:
             # Basic event structure
@@ -192,25 +191,16 @@ class PAICLogAPI:
                 payload=''  # Will be set below
             )
 
-            # Handle payload based on type (matching Frodo's logic)
+            # Handle payload based on type (matching Frodo's flexible approach)
             raw_payload = event_data.get('payload')
 
             if log_event.type == 'text/plain':
                 # For text/plain, payload is a string
                 log_event.payload = str(raw_payload) if raw_payload else ''
             else:
-                # For structured logs, try to parse as LogEventPayload
+                # For structured logs, keep as dict (no assumptions about structure)
                 if isinstance(raw_payload, dict):
-                    log_event.payload = LogEventPayload(
-                        context=raw_payload.get('context', ''),
-                        level=raw_payload.get('level', ''),
-                        logger=raw_payload.get('logger', ''),
-                        message=raw_payload.get('message', ''),
-                        thread=raw_payload.get('thread', ''),
-                        timestamp=raw_payload.get('timestamp', ''),
-                        transactionId=raw_payload.get('transactionId'),
-                        mdc=raw_payload.get('mdc')
-                    )
+                    log_event.payload = raw_payload
                 else:
                     # Fallback to string representation
                     log_event.payload = str(raw_payload) if raw_payload else ''
@@ -288,8 +278,8 @@ class PAICLogStreamer:
         Order: noise filter → level filter → transaction ID filter
         """
         # 1. Noise filter check (matching Frodo's logic)
-        if isinstance(log_event.payload, LogEventPayload):
-            if log_event.payload.logger in noise_filter:
+        if isinstance(log_event.payload, dict):
+            if log_event.payload.get('logger') in noise_filter:
                 return False
         if log_event.type in noise_filter:
             return False
@@ -302,10 +292,7 @@ class PAICLogStreamer:
 
         # 3. Transaction ID filter check (matching Frodo's logic)
         if txid:
-            if isinstance(log_event.payload, LogEventPayload):
-                if not log_event.payload.transactionId or txid not in log_event.payload.transactionId:
-                    return False
-            elif isinstance(log_event.payload, dict):
+            if isinstance(log_event.payload, dict):
                 payload_txid = log_event.payload.get('transactionId')
                 if not payload_txid or txid not in payload_txid:
                     return False
@@ -325,18 +312,8 @@ class PAICLogStreamer:
                 'payload': log_event.payload
             }
 
-            # Handle LogEventPayload serialization
-            if isinstance(log_event.payload, LogEventPayload):
-                event_dict['payload'] = {
-                    'context': log_event.payload.context,
-                    'level': log_event.payload.level,
-                    'logger': log_event.payload.logger,
-                    'message': log_event.payload.message,
-                    'thread': log_event.payload.thread,
-                    'timestamp': log_event.payload.timestamp,
-                    'transactionId': log_event.payload.transactionId,
-                    'mdc': log_event.payload.mdc
-                }
+            # Payload is already str or dict - no conversion needed
+            # Just pass it through as-is
 
             # Return JSON string (matching Frodo's JSON.stringify)
             return json.dumps(event_dict, separators=(',', ':'))
