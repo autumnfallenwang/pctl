@@ -10,6 +10,7 @@ from .token import token
 from .journey import journey
 from .elk import elk
 from .conn import conn
+from .log import log
 from ..core.version import get_version
 
 @click.group()
@@ -31,6 +32,7 @@ cli.add_command(token)
 cli.add_command(journey)
 cli.add_command(elk)
 cli.add_command(conn)
+cli.add_command(log)
 
 if __name__ == '__main__':
     cli()

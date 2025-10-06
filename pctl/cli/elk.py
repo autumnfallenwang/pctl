@@ -70,7 +70,7 @@ async def init(ctx, verbose: bool):
 
 
 @elk.command()
-@click.argument("conn_name", required=False, default="commkentsb2")
+@click.argument("conn_name")
 @click.option("-n", "--name", help="Streamer name (required if you want different name than conn_name)")
 @click.option("-l", "--log-level", type=click.IntRange(1, 4), default=2,
               help="Log level (1=ERROR, 2=INFO, 3=DEBUG, 4=ALL)")
@@ -79,7 +79,7 @@ async def init(ctx, verbose: bool):
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.pass_context
 async def start(ctx, conn_name: str, name: Optional[str], log_level: int, component: str, verbose: bool):
-    """Start log streamer using connection profile [default: commkentsb2]"""
+    """Start log streamer using connection profile"""
     
     config_dir = ctx.obj.get('config_dir')
     try:

@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.5.2**
+**Version 0.6.0**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
@@ -10,6 +10,7 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 - **🚀 Journey Testing**: End-to-end authentication flow testing with step-by-step mode
 - **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with direct API streaming
 - **🔗 Connection Profiles**: Centralized credential and environment management with validation
+- **📜 Log Search**: Historical log analysis with complete pagination, filtering, and multi-day queries
 - **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
 - **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
 - **🌐 Modern HTTP Client**: Rich response objects with status codes, headers, and unified request methods
@@ -171,6 +172,33 @@ pctl elk hardstop
 
 # Remove everything (deletes all data)
 pctl elk down
+```
+
+### Log Search and Analysis
+```bash
+# Search last 24 hours from idm-config (all defaults)
+pctl log search myenv
+
+# Search last 7 days with query filter
+pctl log search myenv -c idm-config --days 7 -q '/payload/objectId co "endpoint/"'
+
+# Search specific date range
+pctl log search myenv -c am-access --from 2025-10-01 --to 2025-10-06
+
+# Save to file in JSONL format (default)
+pctl log search myenv -c idm-config --days 7 -o logs.jsonl
+
+# Save as beautiful JSON with metadata
+pctl log search myenv -c idm-config --format json -o report.json
+
+# Pipe to jq for analysis
+pctl log search myenv -c idm-config | jq '.payload.objectId'
+
+# Search with transaction ID filter
+pctl log search myenv -c am-authentication --txid abc123
+
+# Verbose output showing progress
+pctl log search myenv -c idm-config --days 3 -v
 ```
 
 ## Development

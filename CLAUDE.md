@@ -31,7 +31,7 @@
 - `pctl journey` - Authentication flow testing
 - `pctl elk` - Local ELK stack management (log streaming to Elasticsearch)
 - `pctl conn` - Connection profile management (service accounts, credentials)
-- `pctl log` - **[FUTURE]** Direct log analysis and searching
+- `pctl log` - Historical log analysis and searching ✅ **IMPLEMENTED**
 
 ## CLI Command Pattern
 
@@ -44,8 +44,8 @@ pctl <subcommand> <action> <conn_name> [options]
 - `pctl conn add myenv --platform https://example.com --sa-id abc123`
 - `pctl conn validate myenv`
 - `pctl token get myenv --format bearer`
-- `pctl journey run config.yaml --profile myenv` (future)
-- `pctl elk start --profile myenv` (future)
+- `pctl log search myenv --days 7 -q '/payload/objectId co "endpoint/"'`
+- `pctl elk start myenv`
 
 ## Tech Stack
 
@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: ProcessManager Modernization Complete ✅ **COMPLETE**
-- **Version**: 0.5.2 - Unified process management with clean Python interface
+- **Phase**: Log Analysis Foundation Complete ✅ **COMPLETE**
+- **Version**: 0.6.0 - Historical log search and analysis
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -172,9 +172,11 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **HTTPClient Modernization**: Rich HTTPResponse objects, status code access, unified request methods
   - ✅ **ELK Service Enhancement**: Updated to use new HTTPClient methods, fixed status display issues
   - ✅ **ProcessManager**: Unified process management, clean Python interface, no argparse in workers
-- **Current Work** (Phase 3 - Future Features):
+  - ✅ **Log Search Command**: Complete historical log fetching with pagination, filtering, and multi-day queries
+  - ✅ **Service Layer Dict Contract**: Clean JSON/dict interface, no core model leakage to CLI
+- **Current Work** (Phase 4 - Future Features):
+  - 📋 **Log Analysis Commands**: `pctl log changes`, `pctl log analyze` for specialized analysis
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
-  - 📋 **Log Analysis**: Add `pctl log` commands for interactive log viewing
 
 ## Next Steps - Implementation Plan
 
@@ -335,6 +337,77 @@ uv run pctl log tail --raw | jq '.payload.message'
 2. **Build on proven patterns** - Use existing HTTPClient and ConfigLoader
 3. **Extract foundations when duplicated** - Don't over-engineer upfront
 4. **Focus on operational needs** - Solve real debugging problems
+
+## Log Subcommand Design
+
+### Implemented Commands
+
+**`pctl log search` - Historical log fetching and analysis**
+```bash
+pctl log search <conn_name> [options]
+```
+
+**Key Features:**
+- ✅ Complete pagination (returns ALL logs, not just first page)
+- ✅ Multi-day queries with automatic 24-hour window splitting
+- ✅ Smart defaults (--days 1 by default, no time params needed)
+- ✅ Server-side filtering via PAIC query filters
+- ✅ Two output formats: JSONL (default, pipe-friendly) and JSON (with metadata)
+- ✅ Configurable page size (1-1000, validated at both CLI and service layers)
+- ✅ Rate limit handling with exponential backoff
+- ✅ Service layer returns pure dicts (clean contracts, no model leakage)
+
+**Options:**
+- `-c, --component <source>` - Log source/component [default: idm-config]
+- `--days <N>` - Search last N days [default: 1]
+- `--from <date>` - Start time (YYYY-MM-DD or ISO-8601)
+- `--to <date>` - End time (YYYY-MM-DD or ISO-8601)
+- `-q, --query <filter>` - PAIC query filter expression
+- `--txid <id>` - Transaction ID filter
+- `-l, --log-level <1-4>` - Log level filter [default: 2]
+- `--no-default-noise-filter` - Disable noise filtering
+- `--page-size <N>` - Logs per page (1-1000) [default: 1000]
+- `--max-pages <N>` - Max pages per window [default: 100]
+- `--max-retries <N>` - Max retry attempts on 429 [default: 4]
+- `-f, --format <jsonl|json>` - Output format [default: jsonl]
+- `-o, --output <file>` - Save to file (default: stdout)
+- `-v, --verbose` - Enable verbose logging
+
+**Examples:**
+```bash
+# Last 24h from idm-config (all defaults)
+pctl log search myenv
+
+# Last 7 days with filter (endpoint changes)
+pctl log search myenv -c idm-config --days 7 -q '/payload/objectId co "endpoint/"'
+
+# Specific date range
+pctl log search myenv -c am-access --from 2025-10-01 --to 2025-10-06
+
+# Save to file
+pctl log search myenv -c idm-config --days 7 -o logs.jsonl
+
+# Beautiful JSON for human reading
+pctl log search myenv -c idm-config --format json -o report.json
+
+# Pipe to jq for analysis
+pctl log search myenv -c idm-config | jq '.payload.objectId'
+```
+
+**Performance:**
+- ~2.7 seconds per 24-hour window (natural API throttling)
+- 3-day search with filtering: ~8 seconds
+- Tested with 3,210 logs (multi-page fetch)
+
+**Use Cases:**
+- Config change analysis (endpoint, journey, script modifications)
+- Incident investigation (historical log search)
+- Audit trail tracking (who changed what and when)
+- Foundation for specialized analysis commands
+
+### Future Commands (Not Implemented)
+- `pctl log changes` - Pretty diff view of config changes
+- `pctl log analyze` - Journey performance analysis with statistics
 
 ## ELK Subcommand Design
 

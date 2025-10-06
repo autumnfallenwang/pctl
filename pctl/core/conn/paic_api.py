@@ -85,7 +85,8 @@ class PAICLogAPI:
         end_ts: Optional[str] = None,
         cookie: Optional[str] = None,
         txid: Optional[str] = None,
-        query_filter: Optional[str] = None
+        query_filter: Optional[str] = None,
+        page_size: Optional[int] = None
     ) -> PagedLogResult:
         """
         Fetch historical logs from PAIC API (exactly matches Frodo's fetch function)
@@ -110,6 +111,9 @@ class PAICLogAPI:
 
         if cookie:
             url += f"&_pagedResultsCookie={quote(cookie)}"
+
+        if page_size:
+            url += f"&_pageSize={page_size}"
 
         self.logger.debug(f"Fetching logs from: {url}")
 
