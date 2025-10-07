@@ -205,22 +205,22 @@ pctl log search myenv -c idm-config --days 3 -v
 ### Configuration Change Tracking
 ```bash
 # Track endpoint changes (last 7 days, default format: json)
-pctl log changes myenv --type endpoint --name access_v2B
+pctl log changes myenv --type endpoint --name my_endpoint
 
 # Track journey changes with specific date range
 pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
 
 # Last 30 days, save to file
-pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.json
+pctl log changes myenv --type endpoint --name my_endpoint --days 30 -o changes.json
 
 # JavaScript source as string arrays (like Frodo --use-string-arrays)
-pctl log changes myenv --type endpoint --name access_v2B --format js -o changes.js
+pctl log changes myenv --type endpoint --name my_endpoint --format js -o changes.js
 
 # Compact JSONL for piping
-pctl log changes myenv --type endpoint --name access_v2B --format jsonl | jq .
+pctl log changes myenv --type endpoint --name my_endpoint --format jsonl | jq .
 
 # Verbose output showing progress
-pctl log changes myenv --type endpoint --name access_v2B --days 30 -v
+pctl log changes myenv --type endpoint --name my_endpoint --days 30 -v
 ```
 
 **Note**: Journey and script change tracking infrastructure is ready but only endpoint changes have been tested in production.

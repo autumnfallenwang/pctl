@@ -437,16 +437,16 @@ pctl log changes <conn_name> --type <endpoint|journey|script> --name <resource_n
 **Examples:**
 ```bash
 # Last 7 days of endpoint changes (default format: json)
-pctl log changes myenv --type endpoint --name access_v2B
+pctl log changes myenv --type endpoint --name my_endpoint
 
 # Last 30 days, save to file
-pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.json
+pctl log changes myenv --type endpoint --name my_endpoint --days 30 -o changes.json
 
 # JavaScript source as string arrays (like Frodo)
-pctl log changes myenv --type endpoint --name access_v2B --format js -o changes.js
+pctl log changes myenv --type endpoint --name my_endpoint --format js -o changes.js
 
 # Compact JSONL for piping
-pctl log changes myenv --type endpoint --name access_v2B --format jsonl | jq .
+pctl log changes myenv --type endpoint --name my_endpoint --format jsonl | jq .
 
 # Journey changes in specific date range
 pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
@@ -458,7 +458,7 @@ pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-1
   "success": true,
   "total_changes": 3,
   "resource_type": "endpoint",
-  "resource_name": "access_v2B",
+  "resource_name": "my_endpoint",
   "time_range": {
     "start": "2025-09-07T04:22:23.949Z",
     "end": "2025-10-07T04:22:23.949Z",
@@ -479,7 +479,7 @@ pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-1
         "source": ["var UUID = java.util.UUID;", ...],  // String array when --format js
         "globals": ["{\n  \"request\": {...}", ...],
         "description": "",
-        "resource_id": "endpoint/access_v2B"
+        "resource_id": "endpoint/my_endpoint"
       }
     }
   ]
