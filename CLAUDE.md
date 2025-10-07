@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Log Analysis Foundation Complete ✅ **COMPLETE**
-- **Version**: 0.6.0 - Historical log search and analysis
+- **Phase**: Configuration Change Tracking ✅ **COMPLETE**
+- **Version**: 0.6.1 - Configuration change history tracking
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -174,8 +174,11 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **ProcessManager**: Unified process management, clean Python interface, no argparse in workers
   - ✅ **Log Search Command**: Complete historical log fetching with pagination, filtering, and multi-day queries
   - ✅ **Service Layer Dict Contract**: Clean JSON/dict interface, no core model leakage to CLI
+  - ✅ **Log Changes Command**: Track configuration changes for endpoints/journeys/scripts (endpoints tested)
+  - ✅ **Change Models**: ConfigChangeEvent and ChangeContent with full audit trail
+  - ✅ **Three Output Formats**: jsonl (compact), json (metadata), js (string arrays like Frodo)
 - **Current Work** (Phase 4 - Future Features):
-  - 📋 **Log Analysis Commands**: `pctl log changes`, `pctl log analyze` for specialized analysis
+  - 📋 **Test Log Changes**: Journey and script change tracking (infrastructure ready, needs testing)
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
 
 ## Next Steps - Implementation Plan
@@ -369,7 +372,7 @@ pctl log search <conn_name> [options]
 - `--page-size <N>` - Logs per page (1-1000) [default: 1000]
 - `--max-pages <N>` - Max pages per window [default: 100]
 - `--max-retries <N>` - Max retry attempts on 429 [default: 4]
-- `-f, --format <jsonl|json>` - Output format [default: jsonl]
+- `-f, --format <jsonl|json>` - Output format [default: json]
 - `-o, --output <file>` - Save to file (default: stdout)
 - `-v, --verbose` - Enable verbose logging
 
@@ -405,8 +408,90 @@ pctl log search myenv -c idm-config | jq '.payload.objectId'
 - Audit trail tracking (who changed what and when)
 - Foundation for specialized analysis commands
 
+**`pctl log changes` - Track configuration changes for endpoints/journeys/scripts**
+```bash
+pctl log changes <conn_name> --type <endpoint|journey|script> --name <resource_name> [options]
+```
+
+**Key Features:**
+- ✅ Track CREATE/UPDATE/DELETE operations from PAIC audit logs
+- ✅ Extract full audit trail: event_id, timestamp, operation, user_id, transaction_id
+- ✅ Preserve JavaScript source code and globals configuration
+- ✅ Three output formats: jsonl (compact), json (metadata), js (string arrays like Frodo)
+- ✅ Resource type support: endpoint (tested), journey (ready), script (ready)
+- ✅ Clean service layer architecture with ConfigChangeEvent models
+
+**Options:**
+- `--type <endpoint|journey|script>` - Resource type to track (required)
+- `--name <resource_name>` - Resource name (required)
+- `--days <N>` - Search last N days [default: 7]
+- `--from <date>` - Start time (YYYY-MM-DD or ISO-8601)
+- `--to <date>` - End time (YYYY-MM-DD or ISO-8601)
+- `-f, --format <jsonl|json|js>` - Output format [default: json]
+  - `jsonl` - Compact, one change per line
+  - `json` - Beautiful JSON with metadata
+  - `js` - Beautiful JSON with JavaScript as string arrays (like Frodo --use-string-arrays)
+- `-o, --output <file>` - Save to file (default: stdout)
+- `-v, --verbose` - Enable verbose logging
+
+**Examples:**
+```bash
+# Last 7 days of endpoint changes (default format: json)
+pctl log changes myenv --type endpoint --name access_v2B
+
+# Last 30 days, save to file
+pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.json
+
+# JavaScript source as string arrays (like Frodo)
+pctl log changes myenv --type endpoint --name access_v2B --format js -o changes.js
+
+# Compact JSONL for piping
+pctl log changes myenv --type endpoint --name access_v2B --format jsonl | jq .
+
+# Journey changes in specific date range
+pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
+```
+
+**Output Structure:**
+```json
+{
+  "success": true,
+  "total_changes": 3,
+  "resource_type": "endpoint",
+  "resource_name": "access_v2B",
+  "time_range": {
+    "start": "2025-09-07T04:22:23.949Z",
+    "end": "2025-10-07T04:22:23.949Z",
+    "requested_days": 30,
+    "valid_days": 30,
+    "skipped_days": 0
+  },
+  "changes": [
+    {
+      "event_id": "f6f7649d-...",
+      "timestamp": "2025-10-03T03:59:02.240Z",
+      "operation": "CREATE",
+      "user_id": "2f12412b-...",
+      "transaction_id": "frodo-ef2f07ed-...",
+      "resource_type": "endpoint",
+      "content": {
+        "type": "text/javascript",
+        "source": ["var UUID = java.util.UUID;", ...],  // String array when --format js
+        "globals": ["{\n  \"request\": {...}", ...],
+        "description": "",
+        "resource_id": "endpoint/access_v2B"
+      }
+    }
+  ]
+}
+```
+
+**Tested:**
+- ✅ Endpoint changes (multiple environments tested)
+- 📋 Journey changes (infrastructure ready, needs testing)
+- 📋 Script changes (infrastructure ready, needs testing)
+
 ### Future Commands (Not Implemented)
-- `pctl log changes` - Pretty diff view of config changes
 - `pctl log analyze` - Journey performance analysis with statistics
 
 ## ELK Subcommand Design

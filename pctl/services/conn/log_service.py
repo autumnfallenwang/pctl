@@ -537,9 +537,9 @@ class PAICLogService:
         time_range_info = {
             "start": start_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "end": end_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
-            "requested_days": requested_days,
-            "valid_days": valid_days,
-            "skipped_days": skipped_days
+            "requested_days": int(round(requested_days)) if abs(requested_days - round(requested_days)) < 0.001 else round(requested_days, 2),
+            "valid_days": int(round(valid_days)) if abs(valid_days - round(valid_days)) < 0.001 else round(valid_days, 2),
+            "skipped_days": 0 if skipped_days == 0 else (int(round(skipped_days)) if abs(skipped_days - round(skipped_days)) < 0.001 else round(skipped_days, 2))
         }
 
         return windows, time_range_info

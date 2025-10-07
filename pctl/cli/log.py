@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import click
 
 from ..services.conn.log_service import PAICLogService
+from ..services.log.change_service import ChangeService
 from ..core.exceptions import ServiceError
 from ..core.logger import setup_logger
 
@@ -46,8 +47,8 @@ def log():
               help="Max retry attempts on 429 [default: 4]")
 @click.option("-f", "--format", "output_format",
               type=click.Choice(["jsonl", "json"], case_sensitive=False),
-              default="jsonl",
-              help="Output format [default: jsonl]")
+              default="json",
+              help="Output format [default: json]")
 @click.option("-o", "--output",
               type=click.Path(),
               help="Save to file (default: stdout/console)")
@@ -141,7 +142,7 @@ async def search(
             click.echo()
 
         # Format and output
-        output_content = _format_output(result, output_format)
+        output_content = _format_search_output(result, output_format)
 
         if output:
             # Write to file
@@ -214,8 +215,8 @@ def _parse_timestamp(date_str: str) -> str:
         return f"{date_str}T00:00:00.000Z"
 
 
-def _format_output(result: dict, output_format: str) -> str:
-    """Format result based on output format choice"""
+def _format_search_output(result: dict, output_format: str) -> str:
+    """Format search result based on output format choice"""
 
     if output_format == "jsonl":
         # JSON Lines - one log per line (no metadata)
@@ -240,5 +241,178 @@ def async_command(f):
     return wrapper
 
 
+@log.command()
+@click.argument("conn_name")
+@click.option("--type", "resource_type", required=True,
+              type=click.Choice(["endpoint", "journey", "script"], case_sensitive=False),
+              help="Resource type to track")
+@click.option("--name", "resource_name", required=True,
+              help="Resource name")
+@click.option("--days", type=int, default=7,
+              help="Search last N days [default: 7]")
+@click.option("--from", "from_ts",
+              help="Start time (YYYY-MM-DD or ISO-8601, ignored if --days given)")
+@click.option("--to", "to_ts",
+              help="End time (YYYY-MM-DD or ISO-8601, ignored if --days given)")
+@click.option("-f", "--format", "output_format",
+              type=click.Choice(["jsonl", "json", "js"], case_sensitive=False),
+              default="json",
+              help="Output format [default: json]")
+@click.option("-o", "--output",
+              type=click.Path(),
+              help="Save to file (default: stdout)")
+@click.option("-v", "--verbose", is_flag=True,
+              help="Enable verbose logging")
+async def changes(
+    conn_name: str,
+    resource_type: str,
+    resource_name: str,
+    days: Optional[int],
+    from_ts: Optional[str],
+    to_ts: Optional[str],
+    output_format: str,
+    output: Optional[str],
+    verbose: bool
+):
+    """Track configuration changes for endpoints, journeys, and scripts
+
+    Examples:
+
+      # Last 7 days of endpoint changes
+      pctl log changes myenv --type endpoint --name access_v2B
+
+      # Last 30 days, save to file
+      pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.jsonl
+
+      # Beautiful JSON for human review
+      pctl log changes myenv --type endpoint --name access_v2B --format json -o report.json
+
+      # Journey changes in specific date range
+      pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
+    """
+
+    # Setup logging
+    log_level_str = "DEBUG" if verbose else "INFO"
+    setup_logger(log_level_str)
+
+    try:
+        # Parse time parameters
+        start_ts, end_ts = _parse_time_parameters(from_ts, to_ts, days)
+
+        if verbose:
+            click.echo(f"Fetching {resource_type} changes for: {resource_name}")
+            click.echo(f"Connection: {conn_name}")
+            if start_ts:
+                click.echo(f"Start: {start_ts}")
+            if end_ts:
+                click.echo(f"End: {end_ts}")
+            click.echo()
+
+        # Create service and fetch changes
+        service = ChangeService()
+
+        result = await service.fetch_changes(
+            profile_name=conn_name,
+            resource_type=resource_type,
+            resource_name=resource_name,
+            start_ts=start_ts,
+            end_ts=end_ts
+        )
+
+        if not result["success"]:
+            click.echo(f"❌ Failed to fetch changes: {result.get('error', 'Unknown error')}", err=True)
+            raise click.Abort()
+
+        # Display summary if verbose
+        if verbose:
+            click.echo(f"✅ Found {result['total_changes']} changes")
+            click.echo(f"   Resource: {result['resource_type']}/{result['resource_name']}")
+            if result.get('time_range'):
+                click.echo(f"   Time range: {result['time_range'].get('valid_days', 0):.1f} days")
+            click.echo()
+
+        # Format and output
+        output_content = _format_changes_output(result, output_format)
+
+        if output:
+            # Write to file
+            with open(output, 'w') as f:
+                f.write(output_content)
+            click.echo(f"✅ Saved {result['total_changes']} changes to {output}")
+        else:
+            # Write to stdout
+            click.echo(output_content)
+
+    except ValueError as e:
+        click.echo(f"❌ Invalid input: {e}", err=True)
+        raise click.Abort()
+    except ServiceError as e:
+        click.echo(f"❌ Service error: {e}", err=True)
+        raise click.Abort()
+    except Exception as e:
+        click.echo(f"❌ Unexpected error: {e}", err=True)
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        raise click.Abort()
+
+
+def _format_js_source(result: dict) -> dict:
+    """Convert JavaScript source to string arrays (like Frodo --use-string-arrays)
+
+    Args:
+        result: Result dictionary from ChangeService
+
+    Returns:
+        Deep copy of result with source/globals as arrays of strings
+    """
+    import copy
+
+    result_copy = copy.deepcopy(result)
+
+    for change in result_copy["changes"]:
+        content = change.get("content", {})
+
+        # Convert source to string array if it exists
+        if content.get("source"):
+            source = content["source"]
+            # Replace tabs with 4 spaces, then split by newlines
+            source = source.replace('\t', '    ')
+            content["source"] = source.split('\n')
+
+        # Convert globals to string array if it exists
+        if content.get("globals"):
+            globals_str = content["globals"]
+            # Replace tabs with 4 spaces, then split by newlines
+            globals_str = globals_str.replace('\t', '    ')
+            content["globals"] = globals_str.split('\n')
+
+    return result_copy
+
+
+def _format_changes_output(result: dict, output_format: str) -> str:
+    """Format change result based on output format choice"""
+
+    if output_format == "jsonl":
+        # JSON Lines - one change per line (no metadata)
+        lines = []
+        for change in result["changes"]:
+            lines.append(json.dumps(change, separators=(',', ':')))
+        return '\n'.join(lines)
+
+    elif output_format == "json":
+        # Beautiful JSON with metadata
+        return json.dumps(result, indent=2, ensure_ascii=False)
+
+    elif output_format == "js":
+        # Beautiful JSON with pretty-printed JavaScript source code
+        result_copy = _format_js_source(result)
+        return json.dumps(result_copy, indent=2, ensure_ascii=False)
+
+    else:
+        raise ValueError(f"Unknown output format: {output_format}")
+
+
 # Apply async wrapper to commands
 search.callback = async_command(search.callback)
+changes.callback = async_command(changes.callback)

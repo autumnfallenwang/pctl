@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.6.0**
+**Version 0.6.1**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
@@ -11,6 +11,7 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 - **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with direct API streaming
 - **🔗 Connection Profiles**: Centralized credential and environment management with validation
 - **📜 Log Search**: Historical log analysis with complete pagination, filtering, and multi-day queries
+- **🔄 Change Tracking**: Track configuration changes for endpoints/journeys/scripts with full audit trail
 - **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
 - **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
 - **🌐 Modern HTTP Client**: Rich response objects with status codes, headers, and unified request methods
@@ -185,11 +186,11 @@ pctl log search myenv -c idm-config --days 7 -q '/payload/objectId co "endpoint/
 # Search specific date range
 pctl log search myenv -c am-access --from 2025-10-01 --to 2025-10-06
 
-# Save to file in JSONL format (default)
-pctl log search myenv -c idm-config --days 7 -o logs.jsonl
+# Save to file in JSON format (default)
+pctl log search myenv -c idm-config --days 7 -o logs.json
 
-# Save as beautiful JSON with metadata
-pctl log search myenv -c idm-config --format json -o report.json
+# Save as compact JSONL for piping
+pctl log search myenv -c idm-config --format jsonl -o logs.jsonl
 
 # Pipe to jq for analysis
 pctl log search myenv -c idm-config | jq '.payload.objectId'
@@ -200,6 +201,29 @@ pctl log search myenv -c am-authentication --txid abc123
 # Verbose output showing progress
 pctl log search myenv -c idm-config --days 3 -v
 ```
+
+### Configuration Change Tracking
+```bash
+# Track endpoint changes (last 7 days, default format: json)
+pctl log changes myenv --type endpoint --name access_v2B
+
+# Track journey changes with specific date range
+pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
+
+# Last 30 days, save to file
+pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.json
+
+# JavaScript source as string arrays (like Frodo --use-string-arrays)
+pctl log changes myenv --type endpoint --name access_v2B --format js -o changes.js
+
+# Compact JSONL for piping
+pctl log changes myenv --type endpoint --name access_v2B --format jsonl | jq .
+
+# Verbose output showing progress
+pctl log changes myenv --type endpoint --name access_v2B --days 30 -v
+```
+
+**Note**: Journey and script change tracking infrastructure is ready but only endpoint changes have been tested in production.
 
 ## Development
 
