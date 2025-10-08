@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: Configuration Change Tracking ✅ **COMPLETE**
-- **Version**: 0.6.1 - Configuration change history tracking
+- **Phase**: IDM-Config Change Tracking ✅ **COMPLETE**
+- **Version**: 0.6.2 - Universal change tracking model for IDM-Config (6 types supported)
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -174,11 +174,14 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **ProcessManager**: Unified process management, clean Python interface, no argparse in workers
   - ✅ **Log Search Command**: Complete historical log fetching with pagination, filtering, and multi-day queries
   - ✅ **Service Layer Dict Contract**: Clean JSON/dict interface, no core model leakage to CLI
-  - ✅ **Log Changes Command**: Track configuration changes for endpoints/journeys/scripts (endpoints tested)
-  - ✅ **Change Models**: ConfigChangeEvent and ChangeContent with full audit trail
+  - ✅ **Universal Change Model**: Single ConfigChangeEvent model for all resource types (IDM + AM)
+  - ✅ **IDM-Config Change Tracking**: 6 resource types - endpoint, connector, emailTemplate, mapping, access, repo
+  - ✅ **Resource Mappings**: Pattern 1 (type/name) and Pattern 2 (type only) support
+  - ✅ **Enhanced Metadata**: conn_name, source, resource_type/name in all outputs
   - ✅ **Three Output Formats**: jsonl (compact), json (metadata), js (string arrays like Frodo)
-- **Current Work** (Phase 4 - Future Features):
-  - 📋 **Test Log Changes**: Journey and script change tracking (infrastructure ready, needs testing)
+  - ✅ **Auto Directory Creation**: Output files automatically create parent directories
+- **Current Work** (Phase 5 - Future Features):
+  - 📋 **AM-Config Change Tracking**: Add support for journeys, scripts, nodes (metadata only)
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
 
 ## Next Steps - Implementation Plan

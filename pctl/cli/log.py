@@ -4,6 +4,7 @@ Log CLI Commands - Historical log analysis
 
 import asyncio
 import json
+import os
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
@@ -145,6 +146,9 @@ async def search(
         output_content = _format_search_output(result, output_format)
 
         if output:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(output) or '.', exist_ok=True)
+
             # Write to file
             with open(output, 'w') as f:
                 f.write(output_content)
@@ -244,10 +248,10 @@ def async_command(f):
 @log.command()
 @click.argument("conn_name")
 @click.option("--type", "resource_type", required=True,
-              type=click.Choice(["endpoint", "journey", "script"], case_sensitive=False),
+              type=click.Choice(["endpoint", "connector", "emailTemplate", "mapping", "access", "repo"], case_sensitive=False),
               help="Resource type to track")
-@click.option("--name", "resource_name", required=True,
-              help="Resource name")
+@click.option("--name", "resource_name",
+              help="Resource name (required for endpoint/connector/emailTemplate/mapping, not used for access/repo)")
 @click.option("--days", type=int, default=7,
               help="Search last N days [default: 7]")
 @click.option("--from", "from_ts",
@@ -266,7 +270,7 @@ def async_command(f):
 async def changes(
     conn_name: str,
     resource_type: str,
-    resource_name: str,
+    resource_name: Optional[str],
     days: Optional[int],
     from_ts: Optional[str],
     to_ts: Optional[str],
@@ -274,21 +278,27 @@ async def changes(
     output: Optional[str],
     verbose: bool
 ):
-    """Track configuration changes for endpoints, journeys, and scripts
+    """Track configuration changes for IDM-Config resources
 
     Examples:
 
-      # Last 7 days of endpoint changes
-      pctl log changes myenv --type endpoint --name access_v2B
+      # Endpoint changes (requires --name)
+      pctl log changes myenv --type endpoint --name my_endpoint
 
-      # Last 30 days, save to file
-      pctl log changes myenv --type endpoint --name access_v2B --days 30 -o changes.jsonl
+      # Connector changes (requires --name)
+      pctl log changes myenv --type connector --name MyConnector --days 30
 
-      # Beautiful JSON for human review
-      pctl log changes myenv --type endpoint --name access_v2B --format json -o report.json
+      # Email template changes (requires --name)
+      pctl log changes myenv --type emailTemplate --name MyEmailTemplate
 
-      # Journey changes in specific date range
-      pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
+      # Access control changes (no --name needed, global config)
+      pctl log changes myenv --type access --days 30
+
+      # Repository config changes (no --name needed, global config)
+      pctl log changes myenv --type repo --days 30
+
+      # Save to file with specific format
+      pctl log changes myenv --type endpoint --name my_endpoint --format json -o report.json
     """
 
     # Setup logging
@@ -335,6 +345,9 @@ async def changes(
         output_content = _format_changes_output(result, output_format)
 
         if output:
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(output) or '.', exist_ok=True)
+
             # Write to file
             with open(output, 'w') as f:
                 f.write(output_content)
@@ -364,28 +377,32 @@ def _format_js_source(result: dict) -> dict:
         result: Result dictionary from ChangeService
 
     Returns:
-        Deep copy of result with source/globals as arrays of strings
+        Deep copy of result with source/globalsObject as arrays of strings
     """
     import copy
 
     result_copy = copy.deepcopy(result)
 
     for change in result_copy["changes"]:
-        content = change.get("content", {})
+        content = change.get("content")
 
-        # Convert source to string array if it exists
-        if content.get("source"):
+        # Skip if no content (AM-Config or None)
+        if not content:
+            continue
+
+        # Convert source to string array if it exists (endpoints have this)
+        if isinstance(content.get("source"), str):
             source = content["source"]
             # Replace tabs with 4 spaces, then split by newlines
             source = source.replace('\t', '    ')
             content["source"] = source.split('\n')
 
-        # Convert globals to string array if it exists
-        if content.get("globals"):
-            globals_str = content["globals"]
+        # Convert globalsObject to string array if it exists (endpoints have this)
+        if isinstance(content.get("globalsObject"), str):
+            globals_str = content["globalsObject"]
             # Replace tabs with 4 spaces, then split by newlines
             globals_str = globals_str.replace('\t', '    ')
-            content["globals"] = globals_str.split('\n')
+            content["globalsObject"] = globals_str.split('\n')
 
     return result_copy
 

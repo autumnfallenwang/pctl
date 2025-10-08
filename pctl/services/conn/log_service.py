@@ -295,6 +295,11 @@ class PAICLogService:
 
             return {
                 "success": True,
+                "conn_name": profile_name,
+                "source": source,
+                "query_filter": query_filter,
+                "log_level": level,
+                "noise_filter_enabled": use_default_noise_filter,
                 "total_logs": len(all_logs),
                 "total_pages": total_pages,
                 "total_windows": len(time_windows),
