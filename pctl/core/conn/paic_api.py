@@ -372,7 +372,7 @@ class AMAPIClient:
 
     # ========== Generic HTTP Methods (like Frodo's Axios instance) ==========
 
-    def get(
+    async def get(
         self,
         realm: str,
         path: str,
@@ -397,7 +397,7 @@ class AMAPIClient:
         url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
 
         try:
-            response = self.http_client.get_response(
+            response = await self.http_client.get_response(
                 url,
                 params=params,
                 headers=self._get_headers(api_version)
@@ -408,7 +408,7 @@ class AMAPIClient:
             self.logger.error(f"AM GET failed: {url}, error: {e}")
             raise ServiceError(f"AM GET API error: {e}")
 
-    def post(
+    async def post(
         self,
         realm: str,
         path: str,
@@ -440,7 +440,7 @@ class AMAPIClient:
         url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
 
         try:
-            response = self.http_client.post_response(
+            response = await self.http_client.post_response(
                 url,
                 json=payload or {},
                 params=params,
@@ -452,7 +452,7 @@ class AMAPIClient:
             self.logger.error(f"AM POST failed: {url}, error: {e}")
             raise ServiceError(f"AM POST API error: {e}")
 
-    def put(
+    async def put(
         self,
         realm: str,
         path: str,
@@ -481,7 +481,7 @@ class AMAPIClient:
         url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
 
         try:
-            response = self.http_client.put_response(
+            response = await self.http_client.put_response(
                 url,
                 json=payload,
                 headers=self._get_headers(api_version)
@@ -492,7 +492,7 @@ class AMAPIClient:
             self.logger.error(f"AM PUT failed: {url}, error: {e}")
             raise ServiceError(f"AM PUT API error: {e}")
 
-    def delete(
+    async def delete(
         self,
         realm: str,
         path: str,
@@ -515,7 +515,7 @@ class AMAPIClient:
         url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
 
         try:
-            response = self.http_client.delete_response(
+            response = await self.http_client.delete_response(
                 url,
                 headers=self._get_headers(api_version)
             )

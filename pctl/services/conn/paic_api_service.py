@@ -1,32 +1,43 @@
 """
 PAIC API Services for AM resource operations
 Provides high-level business logic for different resource types (scripts, journeys, nodes)
+
+Design Philosophy:
+- Minimal service - only the 6 core operations from PAIC REST API docs
+- No convenience methods (find_by_name, delete_by_name) - build those in specific use cases
+- Focus on direct API mapping: query, read, validate, create, update, delete
 """
 
-from typing import Optional
 from loguru import logger
 
 from pctl.core.conn.paic_api import AMAPIClient
+from pctl.core.exceptions import ServiceError
 from pctl.services.token.token_service import TokenService
 from pctl.services.conn.conn_service import ConnectionService
-from pctl.core.exceptions import ServiceError
 
 
 class ScriptAPIService:
     """
-    Script-specific API operations (matches Frodo's ScriptApi.ts)
-    Provides high-level script operations with name resolution
+    Script-specific API operations - minimal service with only 6 core operations
+
+    API Documentation:
+    - Query:    https://docs.pingidentity.com/.../rest-api-scripts-query.html
+    - Read:     https://docs.pingidentity.com/.../rest-api-scripts-read.html
+    - Validate: https://docs.pingidentity.com/.../rest-api-scripts-validate.html
+    - Create:   https://docs.pingidentity.com/.../rest-api-scripts-create.html
+    - Update:   https://docs.pingidentity.com/.../rest-api-scripts-update.html
+    - Delete:   https://docs.pingidentity.com/.../rest-api-scripts-delete.html
     """
 
-    # Script API uses specific version (matches Frodo)
-    API_VERSION = "protocol=2.0,resource=1.0"
+    # Script API version from docs (Accept-API-Version header)
+    API_VERSION = "resource=1.1"
 
     def __init__(self):
         self._token_service = TokenService()
         self._conn_service = ConnectionService()
         self.logger = logger
 
-    def _get_am_client(self, conn_name: str) -> AMAPIClient:
+    async def _get_am_client(self, conn_name: str) -> AMAPIClient:
         """
         Create AM client with token from TokenService
 
@@ -35,17 +46,28 @@ class ScriptAPIService:
 
         Returns:
             AMAPIClient: Configured AM API client with script API version
+
+        Raises:
+            ServiceError: If token generation or profile retrieval fails
         """
         # Get token from TokenService (service-to-service call)
-        token_data = self._token_service.get_token(conn_name)
+        token_result = await self._token_service.get_token_from_profile(conn_name)
+
+        if not token_result["success"]:
+            raise ServiceError(f"Failed to get token for '{conn_name}': {token_result.get('error')}")
 
         # Get connection profile from ConnectionService
-        conn = self._conn_service.get_profile(conn_name)
+        profile_result = self._conn_service.get_profile(conn_name)
+
+        if not profile_result["success"]:
+            raise ServiceError(f"Failed to get profile '{conn_name}': {profile_result.get('error')}")
+
+        profile = profile_result["profile"]
 
         # Create AM client with script-specific API version
         return AMAPIClient(
-            platform_url=conn['platform_url'],
-            access_token=token_data['access_token'],
+            platform_url=profile['platform_url'],
+            access_token=token_result['token'],
             api_version=self.API_VERSION
         )
 
@@ -61,80 +83,75 @@ class ScriptAPIService:
         """
         return f"scripts/{script_id}" if script_id else "scripts"
 
-    # ========== Query Operations ==========
+    # ========== Core API Operations (6 operations from docs) ==========
 
-    def get_all_scripts(self, conn_name: str, realm: str = "alpha") -> list[dict]:
-        """
-        Get all scripts in realm (matches Frodo's getScripts)
-
-        Args:
-            conn_name: Connection profile name
-            realm: Target realm (default: "alpha")
-
-        Returns:
-            list[dict]: List of script objects
-        """
-        self.logger.debug(f"Getting all scripts from realm: {realm}")
-
-        client = self._get_am_client(conn_name)
-        path = self._build_script_path()
-
-        result = client.get(realm, path, params={"_queryFilter": "true"})
-        return result.get('result', [])
-
-    def find_script_by_name(
+    async def query_scripts(
         self,
         conn_name: str,
-        script_name: str,
-        realm: str = "alpha"
-    ) -> Optional[dict]:
+        realm: str = "alpha",
+        query_filter: str = "true"
+    ) -> list[dict]:
         """
-        Find script by name, return script object or None (matches Frodo's getScriptByName)
+        Query scripts with filter (supports pagination)
+
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-query.html
 
         Args:
             conn_name: Connection profile name
-            script_name: Script name to search for
             realm: Target realm (default: "alpha")
+            query_filter: SCIM filter expression (default: "true" for all scripts)
+                         Examples: 'name eq "MyScript"', 'name co "Test"'
 
         Returns:
-            Optional[dict]: Script object if found, None otherwise
+            list[dict]: Complete list of script objects (all pages fetched)
 
-        Example Return:
+        Example Response Item:
             {
                 "_id": "script-uuid",
                 "name": "MyScript",
                 "script": "base64-encoded-source",
                 "language": "JAVASCRIPT",
                 "context": "AUTHENTICATION_TREE_DECISION_NODE",
+                "description": "...",
                 ...
             }
         """
-        self.logger.debug(f"Finding script by name: {script_name} in realm: {realm}")
+        self.logger.debug(f"Querying scripts from realm '{realm}' with filter: {query_filter}")
 
-        client = self._get_am_client(conn_name)
+        client = await self._get_am_client(conn_name)
         path = self._build_script_path()
-        query = f'name eq "{script_name}"'
 
-        result = client.get(realm, path, params={"_queryFilter": query})
-        scripts = result.get('result', [])
+        # Fetch all pages (handle pagination)
+        all_scripts = []
+        page_cookie = None
 
-        if not scripts:
-            self.logger.debug(f"Script not found: {script_name}")
-            return None
+        while True:
+            params = {"_queryFilter": query_filter}
+            if page_cookie:
+                params["_pagedResultsCookie"] = page_cookie
 
-        if len(scripts) > 1:
-            self.logger.warning(f"Multiple scripts found with name '{script_name}', returning first match")
+            result = await client.get(realm, path, params=params)
+            scripts = result.get('result', [])
+            all_scripts.extend(scripts)
 
-        return scripts[0]
+            # Check for next page
+            page_cookie = result.get('pagedResultsCookie')
+            if not page_cookie:
+                break
 
-    def get_script_by_id(
+        self.logger.debug(f"Retrieved {len(all_scripts)} total scripts")
+        return all_scripts
+
+    async def read_script(
         self,
         conn_name: str,
         script_id: str,
         realm: str = "alpha"
     ) -> dict:
         """
-        Get script by UUID (matches Frodo's getScript)
+        Read script by UUID
+
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-read.html
 
         Args:
             conn_name: Connection profile name
@@ -142,129 +159,30 @@ class ScriptAPIService:
             realm: Target realm (default: "alpha")
 
         Returns:
-            dict: Complete script object
+            dict: Complete script object with metadata
 
-        Raises:
-            ServiceError: If script not found or API error
+        Example Response:
+            {
+                "_id": "uuid",
+                "name": "MyScript",
+                "script": "base64-content",
+                "language": "JAVASCRIPT",
+                "context": "AUTHENTICATION_TREE_DECISION_NODE",
+                "createdBy": "user-id",
+                "creationDate": "timestamp",
+                "lastModifiedBy": "user-id",
+                "lastModifiedDate": "timestamp",
+                ...
+            }
         """
-        self.logger.debug(f"Getting script by ID: {script_id}")
+        self.logger.debug(f"Reading script by ID: {script_id}")
 
-        client = self._get_am_client(conn_name)
+        client = await self._get_am_client(conn_name)
         path = self._build_script_path(script_id)
 
-        return client.get(realm, path)
+        return await client.get(realm, path)
 
-    # ========== Create/Update/Delete Operations ==========
-
-    def create_script(
-        self,
-        conn_name: str,
-        script_data: dict,
-        realm: str = "alpha"
-    ) -> dict:
-        """
-        Create new script (POST with _action=create)
-
-        Args:
-            conn_name: Connection profile name
-            script_data: Script data (must include name, script, language, context)
-            realm: Target realm
-
-        Returns:
-            dict: Created script with system-generated metadata
-        """
-        self.logger.debug(f"Creating script: {script_data.get('name')}")
-
-        client = self._get_am_client(conn_name)
-        path = self._build_script_path()
-
-        return client.post(realm, path, payload=script_data, params={"_action": "create"})
-
-    def update_script(
-        self,
-        conn_name: str,
-        script_id: str,
-        script_data: dict,
-        realm: str = "alpha"
-    ) -> dict:
-        """
-        Update existing script (matches Frodo's putScript)
-
-        Args:
-            conn_name: Connection profile name
-            script_id: Script UUID
-            script_data: Updated script data
-            realm: Target realm
-
-        Returns:
-            dict: Updated script object
-        """
-        self.logger.debug(f"Updating script: {script_id}")
-
-        client = self._get_am_client(conn_name)
-        path = self._build_script_path(script_id)
-
-        return client.put(realm, path, payload=script_data)
-
-    def delete_script(
-        self,
-        conn_name: str,
-        script_id: str,
-        realm: str = "alpha"
-    ) -> dict:
-        """
-        Delete script by UUID (matches Frodo's deleteScript)
-
-        Args:
-            conn_name: Connection profile name
-            script_id: Script UUID
-            realm: Target realm
-
-        Returns:
-            dict: Empty object {} on success
-        """
-        self.logger.debug(f"Deleting script: {script_id}")
-
-        client = self._get_am_client(conn_name)
-        path = self._build_script_path(script_id)
-
-        return client.delete(realm, path)
-
-    def delete_script_by_name(
-        self,
-        conn_name: str,
-        script_name: str,
-        realm: str = "alpha"
-    ) -> dict:
-        """
-        Delete script by name (matches Frodo's deleteScriptByName)
-        Finds script by name first, then deletes by UUID
-
-        Args:
-            conn_name: Connection profile name
-            script_name: Script name
-            realm: Target realm
-
-        Returns:
-            dict: Empty object {} on success
-
-        Raises:
-            ServiceError: If script not found
-        """
-        self.logger.debug(f"Deleting script by name: {script_name}")
-
-        # Find script by name first
-        script = self.find_script_by_name(conn_name, script_name, realm)
-
-        if not script:
-            raise ServiceError(f"Script with name '{script_name}' does not exist")
-
-        # Delete by UUID
-        return self.delete_script(conn_name, script['_id'], realm)
-
-    # ========== Validation Operations ==========
-
-    def validate_script(
+    async def validate_script(
         self,
         conn_name: str,
         script_content: str,
@@ -274,14 +192,16 @@ class ScriptAPIService:
         """
         Validate script syntax
 
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-validate.html
+
         Args:
             conn_name: Connection profile name
-            script_content: Base64-encoded script source
-            language: Script language (default: "JAVASCRIPT")
-            realm: Target realm
+            script_content: Base64-encoded script source (UTF-8 encoded, then Base64)
+            language: Script language (only "JAVASCRIPT" supported)
+            realm: Target realm (default: "alpha")
 
         Returns:
-            dict: Validation result {"success": bool, "errors": [...]}
+            dict: Validation result
 
         Example Response (valid):
             {"success": true}
@@ -296,7 +216,7 @@ class ScriptAPIService:
         """
         self.logger.debug(f"Validating script (language: {language})")
 
-        client = self._get_am_client(conn_name)
+        client = await self._get_am_client(conn_name)
         path = self._build_script_path()
 
         payload = {
@@ -304,7 +224,103 @@ class ScriptAPIService:
             "language": language
         }
 
-        return client.post(realm, path, payload=payload, params={"_action": "validate"})
+        return await client.post(realm, path, payload=payload, params={"_action": "validate"})
+
+    async def create_script(
+        self,
+        conn_name: str,
+        script_data: dict,
+        realm: str = "alpha"
+    ) -> dict:
+        """
+        Create new script
+
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-create.html
+
+        Args:
+            conn_name: Connection profile name
+            script_data: Script data (must include name, script, language, context)
+            realm: Target realm (default: "alpha")
+
+        Returns:
+            dict: Created script with system-generated metadata (_id, _rev, timestamps)
+
+        Required Fields in script_data:
+            - name: Script name
+            - script: Base64-encoded script source
+            - language: "JAVASCRIPT"
+            - context: Script context (e.g., "AUTHENTICATION_TREE_DECISION_NODE")
+
+        Optional Fields:
+            - description: Script description
+        """
+        self.logger.debug(f"Creating script: {script_data.get('name')}")
+
+        client = await self._get_am_client(conn_name)
+        path = self._build_script_path()
+
+        return await client.post(realm, path, payload=script_data, params={"_action": "create"})
+
+    async def update_script(
+        self,
+        conn_name: str,
+        script_id: str,
+        script_data: dict,
+        realm: str = "alpha"
+    ) -> dict:
+        """
+        Update existing script
+
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-update.html
+
+        Args:
+            conn_name: Connection profile name
+            script_id: Script UUID
+            script_data: Updated script data (same fields as create)
+            realm: Target realm (default: "alpha")
+
+        Returns:
+            dict: Updated script object with new metadata
+
+        Note:
+            - Cannot update default "ForgeRock Internal" scripts
+            - Full replacement (not partial update)
+        """
+        self.logger.debug(f"Updating script: {script_id}")
+
+        client = await self._get_am_client(conn_name)
+        path = self._build_script_path(script_id)
+
+        return await client.put(realm, path, payload=script_data)
+
+    async def delete_script(
+        self,
+        conn_name: str,
+        script_id: str,
+        realm: str = "alpha"
+    ) -> dict:
+        """
+        Delete script by UUID
+
+        API Doc: https://docs.pingidentity.com/.../rest-api-scripts-delete.html
+
+        Args:
+            conn_name: Connection profile name
+            script_id: Script UUID
+            realm: Target realm (default: "alpha")
+
+        Returns:
+            dict: Empty object {} on success
+
+        Note:
+            - Cannot delete default "ForgeRock Internal" scripts
+        """
+        self.logger.debug(f"Deleting script: {script_id}")
+
+        client = await self._get_am_client(conn_name)
+        path = self._build_script_path(script_id)
+
+        return await client.delete(realm, path)
 
 
 class AMConfigAPIService:
@@ -318,14 +334,25 @@ class AMConfigAPIService:
         self._conn_service = ConnectionService()
         self.logger = logger
 
-    def _get_am_client(self, conn_name: str, api_version: str = "resource=1.1") -> AMAPIClient:
+    async def _get_am_client(self, conn_name: str, api_version: str = "resource=1.1") -> AMAPIClient:
         """Create AM client with token"""
-        token_data = self._token_service.get_token(conn_name)
-        conn = self._conn_service.get_profile(conn_name)
+        # Get token from TokenService (service-to-service call)
+        token_result = await self._token_service.get_token_from_profile(conn_name)
+
+        if not token_result["success"]:
+            raise ServiceError(f"Failed to get token for '{conn_name}': {token_result.get('error')}")
+
+        # Get connection profile from ConnectionService
+        profile_result = self._conn_service.get_profile(conn_name)
+
+        if not profile_result["success"]:
+            raise ServiceError(f"Failed to get profile '{conn_name}': {profile_result.get('error')}")
+
+        profile = profile_result["profile"]
 
         return AMAPIClient(
-            platform_url=conn['platform_url'],
-            access_token=token_data['access_token'],
+            platform_url=profile['platform_url'],
+            access_token=token_result['token'],
             api_version=api_version
         )
 
