@@ -1,6 +1,8 @@
 """
-PAIC REST API operations for log streaming
+PAIC REST API operations for log streaming and AM API access
 Exactly mimics Frodo's behavior from frodo-lib/src/api/cloud/LogApi.ts and frodo-cli/src/ops/LogOps.ts
+
+AMAPIClient exactly matches Frodo's generateAmApi() factory pattern from BaseApi.ts
 """
 
 import json
@@ -325,3 +327,200 @@ class PAICLogStreamer:
         except Exception as e:
             self.logger.debug(f"Failed to serialize log event: {e}")
             return f'{{"error": "Failed to serialize log event: {str(e)}"}}'
+
+
+class AMAPIClient:
+    """
+    Low-level AM REST API client - Pre-configured HTTP client for AM APIs
+
+    Provides generic HTTP methods (get, post, put, delete) with AM-specific headers.
+    Does NOT provide resource-specific methods (scripts, trees, etc.) - those belong
+    in service layer (ScriptAPIService, etc.)
+
+    Exactly matches Frodo's generateAmApi() factory pattern.
+    Only accessible by services/conn/ (domain boundary rule)
+    """
+
+    def __init__(self, platform_url: str, access_token: str, api_version: str = "resource=1.1"):
+        """
+        Args:
+            platform_url: Base platform URL from connection profile
+            access_token: Bearer token (provided by caller, not generated here)
+            api_version: Default API version header (can be overridden per request)
+        """
+        self.platform_url = platform_url.rstrip('/')
+        self.access_token = access_token
+        self.default_api_version = api_version
+        self.http_client = HTTPClient()
+        self.logger = logger
+
+    def _get_headers(self, api_version: str | None = None) -> dict:
+        """
+        Get AM-specific headers (matches Frodo's generateAmApi headers)
+
+        Args:
+            api_version: Override default API version
+
+        Returns:
+            dict: Headers with Authorization, Accept-API-Version, Content-Type
+        """
+        return {
+            "Authorization": f"Bearer {self.access_token}",
+            "Accept-API-Version": api_version or self.default_api_version,
+            "Content-Type": "application/json"
+        }
+
+    # ========== Generic HTTP Methods (like Frodo's Axios instance) ==========
+
+    def get(
+        self,
+        realm: str,
+        path: str,
+        params: dict | None = None,
+        api_version: str | None = None
+    ) -> dict:
+        """
+        Generic GET request (matches Frodo's axios.get())
+
+        Args:
+            realm: Target realm (e.g., "alpha")
+            path: Resource path after realm (e.g., "scripts", "scripts/{uuid}")
+            params: Query parameters (e.g., {"_queryFilter": "true"})
+            api_version: Override default API version
+
+        Returns:
+            dict: JSON response
+
+        Example:
+            client.get("alpha", "scripts", {"_queryFilter": "true"})
+        """
+        url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
+
+        try:
+            response = self.http_client.get_response(
+                url,
+                params=params,
+                headers=self._get_headers(api_version)
+            )
+            return response.json()
+
+        except Exception as e:
+            self.logger.error(f"AM GET failed: {url}, error: {e}")
+            raise ServiceError(f"AM GET API error: {e}")
+
+    def post(
+        self,
+        realm: str,
+        path: str,
+        payload: dict | None = None,
+        params: dict | None = None,
+        api_version: str | None = None
+    ) -> dict:
+        """
+        Generic POST request (matches Frodo's axios.post())
+
+        Args:
+            realm: Target realm (e.g., "alpha")
+            path: Resource path after realm (e.g., "scripts")
+            payload: Request body (JSON)
+            params: Query parameters (e.g., {"_action": "create"})
+            api_version: Override default API version
+
+        Returns:
+            dict: JSON response
+
+        Example:
+            client.post(
+                "alpha",
+                "scripts",
+                payload={"name": "MyScript", ...},
+                params={"_action": "create"}
+            )
+        """
+        url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
+
+        try:
+            response = self.http_client.post_response(
+                url,
+                json=payload or {},
+                params=params,
+                headers=self._get_headers(api_version)
+            )
+            return response.json()
+
+        except Exception as e:
+            self.logger.error(f"AM POST failed: {url}, error: {e}")
+            raise ServiceError(f"AM POST API error: {e}")
+
+    def put(
+        self,
+        realm: str,
+        path: str,
+        payload: dict,
+        api_version: str | None = None
+    ) -> dict:
+        """
+        Generic PUT request (matches Frodo's axios.put())
+
+        Args:
+            realm: Target realm (e.g., "alpha")
+            path: Resource path after realm (e.g., "scripts/{uuid}")
+            payload: Request body (JSON)
+            api_version: Override default API version
+
+        Returns:
+            dict: JSON response
+
+        Example:
+            client.put(
+                "alpha",
+                "scripts/uuid-123",
+                payload={"name": "UpdatedScript", ...}
+            )
+        """
+        url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
+
+        try:
+            response = self.http_client.put_response(
+                url,
+                json=payload,
+                headers=self._get_headers(api_version)
+            )
+            return response.json()
+
+        except Exception as e:
+            self.logger.error(f"AM PUT failed: {url}, error: {e}")
+            raise ServiceError(f"AM PUT API error: {e}")
+
+    def delete(
+        self,
+        realm: str,
+        path: str,
+        api_version: str | None = None
+    ) -> dict:
+        """
+        Generic DELETE request (matches Frodo's axios.delete())
+
+        Args:
+            realm: Target realm (e.g., "alpha")
+            path: Resource path after realm (e.g., "scripts/{uuid}")
+            api_version: Override default API version
+
+        Returns:
+            dict: JSON response (usually empty {})
+
+        Example:
+            client.delete("alpha", "scripts/uuid-123")
+        """
+        url = f"{self.platform_url}/am/json/realms/root/realms/{realm}/{path}"
+
+        try:
+            response = self.http_client.delete_response(
+                url,
+                headers=self._get_headers(api_version)
+            )
+            return response.json()
+
+        except Exception as e:
+            self.logger.error(f"AM DELETE failed: {url}, error: {e}")
+            raise ServiceError(f"AM DELETE API error: {e}")
