@@ -1,6 +1,6 @@
 # pctl - PAIC Control CLI
 
-**Version 0.6.1**
+**Version 0.6.3**
 
 Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational tooling - debugging, testing, analysis, and problem-solving.
 
@@ -11,7 +11,7 @@ Unified Python CLI for PAIC (PingOne Advanced Identity Cloud) operational toolin
 - **📊 ELK Management**: Local Elasticsearch + Kibana setup for log analysis with direct API streaming
 - **🔗 Connection Profiles**: Centralized credential and environment management with validation
 - **📜 Log Search**: Historical log analysis with complete pagination, filtering, and multi-day queries
-- **🔄 Change Tracking**: Track configuration changes for endpoints/journeys/scripts with full audit trail
+- **🔄 Change Tracking**: Track IDM-Config (6 types) and AM-Config (3 types) changes with full audit trail
 - **🛡️ Credential Validation**: Automatic and manual validation of connection credentials
 - **⚡ Consistent CLI Pattern**: `pctl <subcommand> <action> <conn_name>` across all commands
 - **🌐 Modern HTTP Client**: Rich response objects with status codes, headers, and unified request methods
@@ -204,14 +204,23 @@ pctl log search myenv -c idm-config --days 3 -v
 
 ### Configuration Change Tracking
 ```bash
-# Track endpoint changes (last 7 days, default format: json)
+# IDM-Config: Track endpoint changes (last 7 days, default format: json)
 pctl log changes myenv --type endpoint --name my_endpoint
 
-# Track journey changes with specific date range
-pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-10-01
+# IDM-Config: Track connector changes
+pctl log changes myenv --type connector --name MyConnector --days 30
 
-# Last 30 days, save to file
-pctl log changes myenv --type endpoint --name my_endpoint --days 30 -o changes.json
+# IDM-Config: Track access config (no --name needed)
+pctl log changes myenv --type access --days 30
+
+# AM-Config: Track script changes (name auto-resolved to UUID)
+pctl log changes myenv --type script --name "My Test Script"
+
+# AM-Config: Track journey changes
+pctl log changes myenv --type journey --name MyLoginJourney --days 30
+
+# AM-Config: Track SAML entity changes
+pctl log changes myenv --type saml --name "https://example.com/saml/logout/"
 
 # JavaScript source as string arrays (like Frodo --use-string-arrays)
 pctl log changes myenv --type endpoint --name my_endpoint --format js -o changes.js
@@ -223,7 +232,9 @@ pctl log changes myenv --type endpoint --name my_endpoint --format jsonl | jq .
 pctl log changes myenv --type endpoint --name my_endpoint --days 30 -v
 ```
 
-**Note**: Journey and script change tracking infrastructure is ready but only endpoint changes have been tested in production.
+**Supported Types:**
+- **IDM-Config**: endpoint, connector, emailTemplate, mapping, access, repo
+- **AM-Config**: script, journey, saml (metadata only - no content in logs)
 
 ## Development
 

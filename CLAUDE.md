@@ -156,8 +156,8 @@ uv run pyinstaller --onefile pctl/cli/main.py
 
 ## Current Status
 
-- **Phase**: IDM-Config Change Tracking ✅ **COMPLETE**
-- **Version**: 0.6.2 - Universal change tracking model for IDM-Config (6 types supported)
+- **Phase**: AM-Config Change Tracking ✅ **COMPLETE**
+- **Version**: 0.6.3 - AM-Config support for log changes (3 types: script, journey, saml)
 - **Complete**:
   - ✅ **Project Setup**: UV, 3-layer architecture, Python distribution
   - ✅ **Connection Subcommand**: Profile management (add, list, show, delete, validate), dual input modes (flags/config)
@@ -180,8 +180,10 @@ uv run pyinstaller --onefile pctl/cli/main.py
   - ✅ **Enhanced Metadata**: conn_name, source, resource_type/name in all outputs
   - ✅ **Three Output Formats**: jsonl (compact), json (metadata), js (string arrays like Frodo)
   - ✅ **Auto Directory Creation**: Output files automatically create parent directories
+  - ✅ **AM-Config Change Tracking**: 3 resource types - script, journey, saml
+  - ✅ **Script Name Resolution**: Auto-resolve script names to UUIDs using ScriptAPIService
+  - ✅ **LDAP Filter Building**: Support for AM-Config LDAP DN patterns
 - **Current Work** (Phase 5 - Future Features):
-  - 📋 **AM-Config Change Tracking**: Add support for journeys, scripts, nodes (metadata only)
   - 📋 **Journey Service Enhancement**: Use ConnectionService for platform URLs and auth
 
 ## Next Steps - Implementation Plan
@@ -411,21 +413,22 @@ pctl log search myenv -c idm-config | jq '.payload.objectId'
 - Audit trail tracking (who changed what and when)
 - Foundation for specialized analysis commands
 
-**`pctl log changes` - Track configuration changes for endpoints/journeys/scripts**
+**`pctl log changes` - Track configuration changes for IDM and AM resources**
 ```bash
-pctl log changes <conn_name> --type <endpoint|journey|script> --name <resource_name> [options]
+pctl log changes <conn_name> --type <resource_type> --name <resource_name> [options]
 ```
 
 **Key Features:**
 - ✅ Track CREATE/UPDATE/DELETE operations from PAIC audit logs
 - ✅ Extract full audit trail: event_id, timestamp, operation, user_id, transaction_id
-- ✅ Preserve JavaScript source code and globals configuration
+- ✅ Preserve JavaScript source code and globals configuration (IDM-Config only)
 - ✅ Three output formats: jsonl (compact), json (metadata), js (string arrays like Frodo)
-- ✅ Resource type support: endpoint (tested), journey (ready), script (ready)
+- ✅ IDM-Config support: endpoint, connector, emailTemplate, mapping, access, repo
+- ✅ AM-Config support: script (name→UUID auto-resolution), journey, saml
 - ✅ Clean service layer architecture with ConfigChangeEvent models
 
 **Options:**
-- `--type <endpoint|journey|script>` - Resource type to track (required)
+- `--type <endpoint|connector|emailTemplate|mapping|access|repo|script|journey|saml>` - Resource type to track (required)
 - `--name <resource_name>` - Resource name (required)
 - `--days <N>` - Search last N days [default: 7]
 - `--from <date>` - Start time (YYYY-MM-DD or ISO-8601)
@@ -490,9 +493,8 @@ pctl log changes myenv --type journey --name Login --from 2025-09-01 --to 2025-1
 ```
 
 **Tested:**
-- ✅ Endpoint changes (multiple environments tested)
-- 📋 Journey changes (infrastructure ready, needs testing)
-- 📋 Script changes (infrastructure ready, needs testing)
+- ✅ IDM-Config: endpoint, connector, emailTemplate, mapping, access, repo (multiple environments tested)
+- ✅ AM-Config: script, journey, saml (infrastructure complete, ready for testing)
 
 ### Future Commands (Not Implemented)
 - `pctl log analyze` - Journey performance analysis with statistics

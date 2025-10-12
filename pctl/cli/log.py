@@ -248,10 +248,10 @@ def async_command(f):
 @log.command()
 @click.argument("conn_name")
 @click.option("--type", "resource_type", required=True,
-              type=click.Choice(["endpoint", "connector", "emailTemplate", "mapping", "access", "repo"], case_sensitive=False),
+              type=click.Choice(["endpoint", "connector", "emailTemplate", "mapping", "access", "repo", "script", "journey", "saml"], case_sensitive=False),
               help="Resource type to track")
 @click.option("--name", "resource_name",
-              help="Resource name (required for endpoint/connector/emailTemplate/mapping, not used for access/repo)")
+              help="Resource name (required for most types, not used for access/repo)")
 @click.option("--days", type=int, default=7,
               help="Search last N days [default: 7]")
 @click.option("--from", "from_ts",
@@ -278,24 +278,31 @@ async def changes(
     output: Optional[str],
     verbose: bool
 ):
-    """Track configuration changes for IDM-Config resources
+    """Track configuration changes for IDM-Config and AM-Config resources
 
-    Examples:
+    IDM-Config Examples:
 
-      # Endpoint changes (requires --name)
+      # Endpoint changes
       pctl log changes myenv --type endpoint --name my_endpoint
 
-      # Connector changes (requires --name)
+      # Connector changes
       pctl log changes myenv --type connector --name MyConnector --days 30
-
-      # Email template changes (requires --name)
-      pctl log changes myenv --type emailTemplate --name MyEmailTemplate
 
       # Access control changes (no --name needed, global config)
       pctl log changes myenv --type access --days 30
 
-      # Repository config changes (no --name needed, global config)
-      pctl log changes myenv --type repo --days 30
+    AM-Config Examples:
+
+      # Script changes (name auto-resolved to UUID)
+      pctl log changes myenv --type script --name "My Test Script"
+
+      # Journey changes
+      pctl log changes myenv --type journey --name MyLoginJourney --days 30
+
+      # SAML entity changes
+      pctl log changes myenv --type saml --name "https://example.com/saml/logout/"
+
+    Output Formats:
 
       # Save to file with specific format
       pctl log changes myenv --type endpoint --name my_endpoint --format json -o report.json
