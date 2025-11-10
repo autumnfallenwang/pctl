@@ -42,9 +42,9 @@ class PlatformDetector:
                 )
             else:
                 return PlatformConfig(
-                    name="macOS Intel x64", 
-                    docker_compose_file="docker-compose-linux-x64.yml",
-                    elk_config_file="elk_init_config-linux-x64.yaml"
+                    name="macOS Intel x64",
+                    docker_compose_file="docker-compose-mac-x64.yml",
+                    elk_config_file="elk_init_config-mac-x64.yaml"
                 )
         elif system == "Linux":
             return PlatformConfig(
